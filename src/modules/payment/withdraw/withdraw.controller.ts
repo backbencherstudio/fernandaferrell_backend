@@ -1,32 +1,27 @@
 import {
+  Body,
   Controller,
   Get,
-  Post,
-  Body,
-  Patch,
   Param,
-  Delete,
+  Post,
   Req,
   UseGuards,
-  HttpException,
-  HttpStatus,
 } from '@nestjs/common';
-import { WithdrawService } from './withdraw.service';
-import { CreateWithdrawDto } from './dto/create-withdraw.dto';
-import { UpdateWithdrawDto } from './dto/update-withdraw.dto';
+import { ApiExcludeController } from '@nestjs/swagger';
 import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
-import { UserRepository } from 'src/common/repository/user/user.repository';
+import { CreateWithdrawDto } from './dto/create-withdraw.dto';
+import { WithdrawService } from './withdraw.service';
 
+@ApiExcludeController()
 @Controller('withdraw')
 export class WithdrawController {
   constructor(private readonly withdrawService: WithdrawService) {}
 
-  // Stripe Connected Account 
+  // Stripe Connected Account
   @UseGuards(JwtAuthGuard)
   @Post('create-connected-account')
   async createConnectedAccount(@Req() req: any) {
     try {
-   
       const userId = req.user.userId;
       const email = req.user.email;
 
@@ -61,7 +56,7 @@ export class WithdrawController {
     }
   }
 
-  //Withdraw Request 
+  //Withdraw Request
   @UseGuards(JwtAuthGuard)
   @Post('request')
   async requestWithdraw(
@@ -70,7 +65,7 @@ export class WithdrawController {
   ) {
     try {
       const userId = req.user.userId;
-  
+
       const result = await this.withdrawService.processWithdraw(
         userId,
         withdrawDto,
@@ -81,7 +76,6 @@ export class WithdrawController {
       throw error;
     }
   }
-
 
   //Check Connected Account Balance
   @UseGuards(JwtAuthGuard)
@@ -96,7 +90,7 @@ export class WithdrawController {
     }
   }
 
- //Withdraw History
+  //Withdraw History
   @UseGuards(JwtAuthGuard)
   @Get('history')
   async getWithdrawHistory(@Req() req: any) {
@@ -123,6 +117,4 @@ export class WithdrawController {
       throw error;
     }
   }
-
-
 }

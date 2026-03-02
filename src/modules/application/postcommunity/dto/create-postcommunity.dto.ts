@@ -14,13 +14,12 @@ export class CreatePostDto {
 
   @ApiProperty({
     type: 'string',
-    format: 'binary',
+    format: 'binary', 
     required: false,
-    example: 'image.jpg',
   })
-  @IsString()
+
   @IsOptional()
-  image_url?: string;
+  image_url?: any;
 
   @ApiProperty({ example: 'South West Florida', required: false })
   @IsString()

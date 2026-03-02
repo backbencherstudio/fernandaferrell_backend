@@ -1,22 +1,28 @@
 import {
-  Controller,
-  Get,
-  Post,
   Body,
-  Patch,
-  Param,
+  Controller,
   Delete,
+  Get,
+  Param,
+  Patch,
+  Post,
   UseGuards,
 } from '@nestjs/common';
-import { FaqService } from './faq.service';
+import {
+  ApiBearerAuth,
+  ApiExcludeController,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
+import { Role } from '../../../common/guard/role/role.enum';
+import { Roles } from '../../../common/guard/role/roles.decorator';
+import { RolesGuard } from '../../../common/guard/role/roles.guard';
+import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { BatchCreateFaqDto, CreateFaqDto } from './dto/create-faq.dto';
 import { UpdateFaqDto } from './dto/update-faq.dto';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
-import { Roles } from '../../../common/guard/role/roles.decorator';
-import { Role } from '../../../common/guard/role/role.enum';
-import { RolesGuard } from '../../../common/guard/role/roles.guard';
+import { FaqService } from './faq.service';
 
+@ApiExcludeController()
 @ApiBearerAuth()
 @ApiTags('Faq')
 @UseGuards(JwtAuthGuard, RolesGuard)

@@ -1,4 +1,10 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
+import { TajulStorage } from 'src/common/lib/Disk/TajulStorage';
+import appConfig from 'src/config/app.config';
 import { PrismaService } from 'src/prisma/prisma.service';
 import {
   CreateCommentDto,
@@ -10,19 +16,59 @@ export class PostCommunityService {
   constructor(private prisma: PrismaService) {}
 
   // 1. Create a Post
-  async createPost(userId: string, dto: CreatePostDto) {
-    const post = await this.prisma.postCommunity.create({
-      data: {
-        ...dto,
-        author_id: userId,
-      },
-    });
+  async createPost(
+    userId: string,
+    dto: CreatePostDto,
+    file?: Express.Multer.File,
+  ) {
+    // Ensure userId exists
+    if (!userId) {
+      throw new BadRequestException('User ID is required to create a post');
+    }
 
-    return {
-      message: 'Post created successfully',
-      status: 200,
-      data: post,
-    };
+    let image_urlPath: string | null = null;
+
+    if (file) {
+      const sanitizedFileName = `${Date.now()}-${file.originalname.replace(/\s+/g, '_')}`;
+      const storageFolder = appConfig().storageUrl.postCommunity;
+      image_urlPath = `${storageFolder}/${sanitizedFileName}`;
+      await TajulStorage.put(image_urlPath, file.buffer);
+    }
+
+    try {
+      const post = await this.prisma.postCommunity.create({
+        data: {
+          title: dto.title,
+          content: dto.content,
+          location_tag: dto.location_tag,
+          image_url: image_urlPath,
+          // Use the relation connector
+          user: {
+            connect: { id: userId },
+          },
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+            },
+          },
+        },
+      });
+
+      return {
+        message: 'Post created successfully',
+        status: 201, // Created
+        data: post,
+      };
+    } catch (error) {
+      console.error('Prisma Create Error:', error);
+      throw new BadRequestException(
+        'Failed to create post. Ensure the user exists.',
+      );
+    }
   }
 
   async getAllPosts() {

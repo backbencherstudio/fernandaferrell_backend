@@ -1,8 +1,10 @@
 import { Controller, Get, Res } from '@nestjs/common';
-import { PrometheusService } from './prometheus.service';
+import { ApiExcludeController } from '@nestjs/swagger';
 import { Response } from 'express';
 import { Counter } from 'prom-client';
+import { PrometheusService } from './prometheus.service';
 
+@ApiExcludeController()
 @Controller('metrics')
 export class PrometheusController {
   private httpRequestCounter;

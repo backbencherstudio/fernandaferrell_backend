@@ -5,8 +5,11 @@ import {
   Param,
   Post,
   Req,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
   ApiBody,
@@ -14,6 +17,7 @@ import {
   ApiOperation,
   ApiTags,
 } from '@nestjs/swagger';
+import { memoryStorage } from 'multer';
 import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
 import {
   CreateCommentDto,
@@ -28,12 +32,24 @@ import { PostCommunityService } from './postcommunity.service';
 export class PostCommunityController {
   constructor(private readonly postService: PostCommunityService) {}
 
-  @Post()
+  @Post('create-post')
   @ApiOperation({ summary: 'Create a new community post' })
-  @ApiBody({ type: CreatePostDto })
   @ApiConsumes('multipart/form-data')
-  createPost(@Req() req, @Body() dto: CreatePostDto) {
-    return this.postService.createPost(req.user.id, dto);
+  @ApiBody({ type: CreatePostDto })
+  @UseInterceptors(
+    FileInterceptor('image_url', {
+      storage: memoryStorage(),
+      limits: { fileSize: 5 * 1024 * 1024 },
+    }),
+  )
+  createPost(
+    @Req() req,
+    @Body() dto: CreatePostDto,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    const userId = req.user.userId;
+
+    return this.postService.createPost(userId, dto, file);
   }
 
   @Get()

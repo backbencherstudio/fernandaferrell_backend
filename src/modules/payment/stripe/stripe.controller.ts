@@ -4,7 +4,9 @@ import { Request } from 'express';
 import { TransactionRepository } from '../../../common/repository/transaction/transaction.repository';
 import { PrismaService } from '../../../prisma/prisma.service';
 import { Stripe } from 'stripe';
+import { ApiExcludeController } from '@nestjs/swagger';
 
+@ApiExcludeController()
 @Controller('payment/stripe')
 export class StripeController {
   constructor(
