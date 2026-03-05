@@ -43,76 +43,6 @@ export class RequestService {
     };
   }
 
-  // 2. Accept a request (Volunteer)
-  async acceptRequest(user_id: string, request_id: string) {
-    // 1. User check kora (Role check)
-    const user = await this.prisma.user.findUnique({
-      where: { id: user_id },
-      select: { type: true },
-    });
-
-    if (!user) throw new NotFoundException('User not found');
-
-    // 2. Only VOLUNTEER role can accept
-    if (user.type !== UserType.VOLUNTEER) {
-      throw new BadRequestException('Only volunteers can accept help requests');
-    }
-
-    // 3. Request validity check
-    const request = await this.prisma.request.findUnique({
-      where: { id: request_id },
-    });
-
-    if (!request) throw new NotFoundException('Request not found');
-
-    // 4. Status check (Only PENDING can be accepted)
-    if (request.status !== RequestStatus.PENDING) {
-      throw new BadRequestException('Request is already accepted or completed');
-    }
-
-    // 5. Prevent Seeker from accepting their own request (Logic check)
-    if (request.seeker_id === user_id) {
-      throw new BadRequestException('You cannot accept your own request');
-    }
-
-    return this.prisma.request.update({
-      where: { id: request_id },
-      data: {
-        volunteer_id: user_id,
-        status: RequestStatus.ACCEPTED,
-      },
-    });
-  }
-
-  // 3. Complete & Give Feedback
-  async submitFeedback(
-    user_id: string,
-    request_id: string,
-    dto: CreateFeedbackDto,
-  ) {
-    const request = await this.prisma.request.findUnique({
-      where: { id: request_id },
-    });
-
-    if (!request) throw new NotFoundException('Request not found');
-
-    // Status update to COMPLETED if not already
-    await this.prisma.request.update({
-      where: { id: request_id },
-      data: { status: RequestStatus.COMPLETED },
-    });
-
-    // Create feedback
-    return this.prisma.feedback.create({
-      data: {
-        rating_type: dto.rating_type,
-        comment: dto.comment,
-        request_id,
-        user_id: user_id,
-      },
-    });
-  }
-
   // 4. Get all pending requests for Volunteers
   async getAvailableRequests() {
     const requests = await this.prisma.request.findMany({
@@ -236,5 +166,95 @@ export class RequestService {
       message: 'Request details fetched successfully',
       data,
     };
+  }
+
+  // 2. Accept a request (Volunteer)
+  async acceptRequest(user_id: string, request_id: string) {
+    // 1. User check kora (Role check)
+    const user = await this.prisma.user.findUnique({
+      where: { id: user_id },
+      select: { type: true },
+    });
+
+    if (!user) throw new NotFoundException('User not found');
+
+    // 2. Only VOLUNTEER role can accept
+    if (user.type !== UserType.VOLUNTEER) {
+      throw new BadRequestException('Only volunteers can accept help requests');
+    }
+
+    // 3. Request validity check
+    const request = await this.prisma.request.findUnique({
+      where: { id: request_id },
+    });
+
+    if (!request) throw new NotFoundException('Request not found');
+
+    // 4. Status check (Only PENDING can be accepted)
+    if (request.status !== RequestStatus.PENDING) {
+      throw new BadRequestException('Request is already accepted or completed');
+    }
+
+    // 5. Prevent Seeker from accepting their own request (Logic check)
+    if (request.seeker_id === user_id) {
+      throw new BadRequestException('You cannot accept your own request');
+    }
+
+    return this.prisma.request.update({
+      where: { id: request_id },
+      data: {
+        volunteer_id: user_id,
+        status: RequestStatus.ACCEPTED,
+      },
+    });
+  }
+
+  // 3. Complete & Give Feedback
+  async submitFeedback(
+    user_id: string,
+    request_id: string,
+    dto: CreateFeedbackDto,
+  ) {
+    const request = await this.prisma.request.findUnique({
+      where: { id: request_id },
+    });
+
+    if (!request) throw new NotFoundException('Request not found');
+
+    const existingFeedback = await this.prisma.feedback.findFirst({
+      where: {
+        request_id: request_id,
+        user_id: user_id,
+      },
+    });
+
+    if (existingFeedback) {
+      throw new BadRequestException(
+        'You have already submitted feedback for this request',
+      );
+    }
+
+    if (request.seeker_id !== user_id && request.volunteer_id !== user_id) {
+      throw new BadRequestException(
+        'You are not authorized to give feedback for this request',
+      );
+    }
+    return this.prisma.$transaction(async (tx) => {
+      // Status update to COMPLETED
+      await tx.request.update({
+        where: { id: request_id },
+        data: { status: RequestStatus.COMPLETED },
+      });
+
+      // Create feedback
+      return tx.feedback.create({
+        data: {
+          rating_type: dto.rating_type,
+          comment: dto.comment,
+          request_id,
+          user_id: user_id,
+        },
+      });
+    });
   }
 }

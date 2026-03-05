@@ -203,38 +203,37 @@ enum RequestCategory {
 }
 
 model Request {
-  id                 String          @id @default(uuid())
-  title              String
-  description        String          @db.Text
-  category           RequestCategory 
-  location           String
-  
+  id          String          @id @default(uuid())
+  title       String
+  description String          @db.Text
+  category    RequestCategory
+  location    String
 
-  estimated_duration String?         // e.g., "2-3 hours"
-  
-  urgency_level      UrgencyLevel    @default(MEDIUM)
-  skills_needed      String[]        
-  status             RequestStatus   @default(PENDING)
+  estimated_duration String? // e.g., "2-3 hours"
+
+  urgency_level UrgencyLevel  @default(MEDIUM)
+  skills_needed String[]
+  status        RequestStatus @default(PENDING)
 
   // Relations
-  seeker_id          String
-  seeker             User            @relation("SeekerRequests", fields: [seeker_id], references: [id])
+  seeker_id String
+  seeker    User   @relation("SeekerRequests", fields: [seeker_id], references: [id])
 
-  volunteer_id       String?
-  volunteer          User?           @relation("VolunteerTasks", fields: [volunteer_id], references: [id])
+  volunteer_id String?
+  volunteer    User?   @relation("VolunteerTasks", fields: [volunteer_id], references: [id])
 
-  feedbacks          Feedback[]
+  feedbacks Feedback[]
 
-  created_at         DateTime        @default(now())
-  updated_at         DateTime        @updatedAt
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
 
   @@map("requests")
 }
 
 model Feedback {
-  id          String  @id @default(uuid())
-  rating_type String // "LIKE" or "DISLIKE" screen onusare
-  comment     String? @db.Text
+  id          String   @id @default(uuid())
+  rating_type Boolean?
+  comment     String?  @db.Text
 
   // Relations
   request_id String

@@ -77,17 +77,24 @@ export class RequestController {
   }
 
   @Post(':id/feedback')
-  @ApiOperation({ summary: 'Complete request and submit feedback' })
-  @ApiResponse({
-    status: 201,
-    description: 'Feedback submitted and job completed.',
+  @ApiOperation({
+    summary: 'Submit feedback for a request (Seeker/Volunteer)',
+    description:
+      'Both seeker and volunteer can submit feedback once. Completes the request status.',
   })
+  @ApiBody({ type: CreateFeedbackDto, description: 'Feedback for a request' })
+  @ApiResponse({ status: 201, description: 'Feedback submitted successfully.' })
+  @ApiResponse({
+    status: 400,
+    description: 'Already submitted or Unauthorized.',
+  })
+  @ApiResponse({ status: 404, description: 'Request not found.' })
   async feedback(
     @Param('id') id: string,
     @Body() dto: CreateFeedbackDto,
     @Req() req: any,
   ) {
-    const user_id = req.user.id;
+    const user_id = req.user.id; // JWT Guard theke user ID nite hobe
     return this.requestService.submitFeedback(user_id, id, dto);
   }
 }

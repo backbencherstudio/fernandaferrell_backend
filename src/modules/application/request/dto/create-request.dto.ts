@@ -1,12 +1,13 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsArray,
+  IsBoolean,
   IsEnum,
   IsNotEmpty,
   IsOptional,
   IsString,
 } from 'class-validator';
-import { RequestCategory, RequestStatus, UrgencyLevel } from 'prisma/generated'; // Ba tumar prisma generated path
+import { RequestCategory, UrgencyLevel } from 'prisma/generated'; // Ba tumar prisma generated path
 
 /**
  * 1. Create Request DTO
@@ -75,12 +76,18 @@ export class CreateRequestDto {
  * UI: image_01cf00.png (Complete Request Screen)
  */
 export class CreateFeedbackDto {
-  @IsEnum(RequestStatus, {
-    message: 'Rating must be either LIKE or DISLIKE',
+  @ApiProperty({
+    example: true,
+    description: 'Rating type (true for positive, false for negative)',
   })
+  @IsBoolean()
   @IsNotEmpty()
-  rating_type: RequestStatus;
+  rating_type: boolean;
 
+  @ApiPropertyOptional({
+    example: 'Great service!',
+    description: 'Optional comment',
+  })
   @IsString()
   @IsOptional()
   comment?: string;
