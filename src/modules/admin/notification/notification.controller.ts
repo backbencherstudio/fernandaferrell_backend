@@ -1,27 +1,43 @@
-import { Controller, Get, Param, Delete, UseGuards, Req } from '@nestjs/common';
-import { NotificationService } from './notification.service';
-import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { Role } from '../../../common/guard/role/role.enum';
-import { Roles } from '../../../common/guard/role/roles.decorator';
-import { RolesGuard } from '../../../common/guard/role/roles.guard';
-import { JwtAuthGuard } from '../../../modules/auth/guards/jwt-auth.guard';
+import {
+  Controller,
+  Delete,
+  Get,
+  HttpCode,
+  HttpStatus,
+  Param,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { Request } from 'express';
+import { NotificationListResponse } from 'src/modules/admin/notification/dto/create-notification.dto';
+import { JwtAuthGuard } from '../../../modules/auth/guards/jwt-auth.guard';
+import { NotificationService } from './notification.service';
 
 @ApiBearerAuth()
 @ApiTags('Notification')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN)
+@UseGuards(JwtAuthGuard)
+// @Roles(Role.ADMIN)
 @Controller('admin/notification')
 export class NotificationController {
   constructor(private readonly notificationService: NotificationService) {}
 
   @ApiOperation({ summary: 'Get all notifications' })
+  @HttpCode(HttpStatus.OK)
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'All notifications fetched successfully',
+    type: [NotificationListResponse],
+  })
   @Get()
-  async findAll(@Req() req: Request) {
+  async findAll() {
     try {
-      const user_id = req.user.userId;
-
-      const notification = await this.notificationService.findAll(user_id);
+      const notification = await this.notificationService.findAll();
 
       return notification;
     } catch (error) {

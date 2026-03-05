@@ -1,36 +1,15 @@
 import { Injectable } from '@nestjs/common';
-import { UserType } from 'prisma/generated/client';
 import { TajulStorage } from '../../../common/lib/Disk/TajulStorage';
-import { UserRepository } from '../../../common/repository/user/user.repository';
 import appConfig from '../../../config/app.config';
 import { PrismaService } from '../../../prisma/prisma.service';
 
 @Injectable()
 export class NotificationService {
-  constructor(
-    private prisma: PrismaService,
-    private userRepository: UserRepository,
-  ) {}
+  constructor(private prisma: PrismaService) {}
 
-  async findAll(user_id: string) {
+  async findAll() {
     try {
-      const where_condition = {};
-      const userDetails = await this.userRepository.getUserDetails(user_id);
-
-      if (userDetails.type == UserType.ADMIN) {
-        where_condition['OR'] = [
-          { receiver_id: { equals: user_id } },
-          { receiver_id: { equals: null } },
-        ];
-      }
-      // else if (userDetails.type == Role.VENDOR) {
-      //   where_condition['receiver_id'] = user_id;
-      // }
-
       const notifications = await this.prisma.notification.findMany({
-        where: {
-          ...where_condition,
-        },
         select: {
           id: true,
           sender_id: true,
@@ -84,11 +63,13 @@ export class NotificationService {
 
       return {
         success: true,
+        message: 'Notifications fetched successfully',
         data: notifications,
       };
     } catch (error) {
       return {
         success: false,
+        data: [],
         message: error.message,
       };
     }

@@ -7,39 +7,70 @@ import { formatDistanceToNow } from 'date-fns/formatDistanceToNow';
 import { RequestStatus, UserType } from 'prisma/generated';
 import { TajulStorage } from 'src/common/lib/Disk/TajulStorage';
 import appConfig from 'src/config/app.config';
+import { MessageGateway } from 'src/modules/chat/message/message.gateway';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { CreateFeedbackDto, CreateRequestDto } from './dto/create-request.dto';
 
 @Injectable()
 export class RequestService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly messageGateway: MessageGateway,
+  ) {}
 
-  // 1. Create a new request (Seeker)
   async createRequest(seeker_id: string, dto: CreateRequestDto) {
+    // 1. Validate Seeker
     const user = await this.prisma.user.findUnique({
       where: { id: seeker_id },
+      select: { id: true, type: true, name: true }, // Optimization: Only select what you need
     });
 
     if (!user) throw new NotFoundException('User not found');
     if (user.type !== UserType.SEEKER) {
       throw new BadRequestException('User is not a seeker');
     }
-    const request = await this.prisma.request.create({
-      data: {
-        ...dto,
-        status: RequestStatus.PENDING,
-        seeker: {
-          connect: { id: seeker_id },
+
+    // 2. Atomic Transaction: Create Request and Notifications
+    const result = await this.prisma.$transaction(async (tx) => {
+      // Create the Request
+      const request = await tx.request.create({
+        data: {
+          ...dto,
+          status: RequestStatus.PENDING,
+          seeker: { connect: { id: seeker_id } },
         },
-      },
+      });
+
+      // Fetch all volunteer IDs
+      const volunteers = await tx.user.findMany({
+        where: { type: UserType.VOLUNTEER },
+        select: { id: true },
+      });
+
+      // 3. Create Notifications in Bulk
+      if (volunteers.length > 0) {
+        await tx.notification.createMany({
+          data: volunteers.map((volunteer) => ({
+            sender_id: seeker_id,
+            receiver_id: volunteer.id,
+            message: `New request created ${request.title} by ${user.name}`,
+            entity_id: request.id,
+          })),
+        });
+      }
+
+      return { request, volunteerIds: volunteers.map((v) => v.id) };
     });
 
-    console.log('request', request);
+    // 4. Real-time Emission (Outside transaction to prevent blocking)
+    this.messageGateway.server
+      .to(result.volunteerIds)
+      .emit('new_request', result.request);
 
     return {
       success: true,
       message: 'Request created successfully',
-      data: request,
+      data: result.request,
     };
   }
 
