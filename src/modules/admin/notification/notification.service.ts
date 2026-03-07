@@ -77,11 +77,9 @@ export class NotificationService {
 
   async remove(id: string, user_id: string) {
     try {
-      // check if notification exists
       const notification = await this.prisma.notification.findUnique({
         where: {
           id: id,
-          // receiver_id: user_id,
         },
       });
 
