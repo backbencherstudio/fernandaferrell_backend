@@ -334,6 +334,32 @@ model Notification {
   entity_id String?
 }
 
+
+model video_calls {
+  id           String    @id @default(uuid())
+  room_name    String    @unique
+  caller_id    String
+  receiver_id  String
+  status       String    @default("pending") // pending, ongoing, ended, missed
+  started_at   DateTime  @default(now())
+  ended_at     DateTime?
+  duration     Int?      // In seconds
+
+  @@index([caller_id, receiver_id])
+}
+
+model live_streams {
+  id          String   @id @default(uuid())
+  room_name   String   @unique
+  host_id     String
+  title       String?
+  is_active   Boolean  @default(true)
+  viewer_count Int     @default(0)
+  created_at  DateTime @default(now())
+
+  @@index([host_id])
+}
+
 /**
  * ---------------------------------------------------------------------
  * Chating and Notification Schema end
