@@ -1,18 +1,27 @@
 import {
   Body,
   Controller,
+  DefaultValuePipe,
   Get,
+  HttpCode,
   HttpStatus,
   Param,
+  ParseIntPipe,
   Patch,
   Post,
+  Query,
   Req,
+  UploadedFile,
   UseGuards,
+  UseInterceptors,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
   ApiBody,
+  ApiConsumes,
   ApiOperation,
+  ApiQuery,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
@@ -29,17 +38,24 @@ export class RequestController {
   constructor(private readonly requestService: RequestService) {}
 
   @Post('create-request')
-  @ApiOperation({ summary: 'Create a new help request (Seeker)' })
-  // @ApiConsumes('multipart/form-data')
-  @ApiBody({ type: CreateRequestDto, description: 'Create a new help request' })
-  @ApiResponse({
-    status: 201,
-    description: 'Request created successfully.',
-    type: CreateRequestDto,
-  })
-  async create(@Body() dto: CreateRequestDto, @Req() req: any) {
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileInterceptor('file')) // Key matches Swagger
+  async create(
+    @Body() dto: CreateRequestDto,
+    @Req() req: any,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
     const seeker_id = req.user.userId;
-    return this.requestService.createRequest(seeker_id, dto);
+    const result = await this.requestService.createRequest(
+      seeker_id,
+      dto,
+      file,
+    );
+
+    // Emit to Gateway
+    // this.messageGateway.server.to(result.volunteerIds).emit('new_request', result.request);
+
+    return { success: true, data: result.data };
   }
 
   @Get('available')
@@ -51,6 +67,31 @@ export class RequestController {
   })
   async getAvailableRequests() {
     return await this.requestService.getAvailableRequests();
+  }
+
+  @Get('all-disasters')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({
+    summary: 'Get all available disasters with filtering and pagination',
+  })
+  @ApiQuery({
+    name: 'category',
+    required: false,
+    type: String,
+    example: 'HURRICANE_PREPARATION',
+  })
+  @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, type: Number, example: 10 })
+  async getAll(
+    @Query('category') category?: string,
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number = 1,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number = 10,
+  ) {
+    return this.requestService.getAllDisasters({
+      category,
+      page,
+      limit,
+    });
   }
 
   @Get(':id/details')

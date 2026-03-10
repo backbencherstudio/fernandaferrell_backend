@@ -203,29 +203,29 @@ enum RequestCategory {
 }
 
 model Request {
-  id          String          @id @default(uuid())
-  title       String
-  description String          @db.Text
-  category    RequestCategory
-  location    String
+  id                 String          @id @default(uuid())
+  title              String
+  description        String          @db.Text
+  category           RequestCategory
+  location           String
+  attachments        Attachment[]    @relation("RequestAttachments")
 
-  estimated_duration String? // e.g., "2-3 hours"
+  estimated_duration String?         // e.g., "2-3 hours"
+  urgency_level      UrgencyLevel    @default(MEDIUM)
+  skills_needed      String[]
+  status             RequestStatus   @default(PENDING)
 
-  urgency_level UrgencyLevel  @default(MEDIUM)
-  skills_needed String[]
-  status        RequestStatus @default(PENDING)
+  // Foreign Keys (snake_case database mapping)
+  seeker_id          String
+  seeker             User            @relation("SeekerRequests", fields: [seeker_id], references: [id])
 
-  // Relations
-  seeker_id String
-  seeker    User   @relation("SeekerRequests", fields: [seeker_id], references: [id])
+  volunteer_id       String?
+  volunteer          User?           @relation("VolunteerTasks", fields: [volunteer_id], references: [id])
 
-  volunteer_id String?
-  volunteer    User?   @relation("VolunteerTasks", fields: [volunteer_id], references: [id])
+  feedbacks          Feedback[]
 
-  feedbacks Feedback[]
-
-  created_at DateTime @default(now())
-  updated_at DateTime @updatedAt
+  created_at         DateTime        @default(now())
+  updated_at         DateTime        @updatedAt
 
   @@map("requests")
 }
@@ -334,28 +334,27 @@ model Notification {
   entity_id String?
 }
 
-
 model video_calls {
-  id           String    @id @default(uuid())
-  room_name    String    @unique
-  caller_id    String
-  receiver_id  String
-  status       String    @default("pending") // pending, ongoing, ended, missed
-  started_at   DateTime  @default(now())
-  ended_at     DateTime?
-  duration     Int?      // In seconds
+  id          String    @id @default(uuid())
+  room_name   String    @unique
+  caller_id   String
+  receiver_id String
+  status      String    @default("pending") // pending, ongoing, ended, missed
+  started_at  DateTime  @default(now())
+  ended_at    DateTime?
+  duration    Int? // In seconds
 
   @@index([caller_id, receiver_id])
 }
 
 model live_streams {
-  id          String   @id @default(uuid())
-  room_name   String   @unique
-  host_id     String
-  title       String?
-  is_active   Boolean  @default(true)
-  viewer_count Int     @default(0)
-  created_at  DateTime @default(now())
+  id           String   @id @default(uuid())
+  room_name    String   @unique
+  host_id      String
+  title        String?
+  is_active    Boolean  @default(true)
+  viewer_count Int      @default(0)
+  created_at   DateTime @default(now())
 
   @@index([host_id])
 }
@@ -535,3 +534,18 @@ model Contact {
  * others Schema end
  * ---------------------------------------------------------------------
  */
+
+model Attachment {
+  id         String    @id @default(cuid())
+  created_at DateTime  @default(now())
+  updated_at DateTime  @default(now())
+  deleted_at DateTime?
+
+  name     String?
+  type     String?
+  path     String?
+  request_id String
+  request    Request  @relation("RequestAttachments", fields: [request_id], references: [id], onDelete: Cascade)
+
+  @@map("attachments")
+}

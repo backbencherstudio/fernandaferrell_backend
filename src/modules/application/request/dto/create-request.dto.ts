@@ -1,4 +1,5 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Transform } from 'class-transformer';
 import {
   IsArray,
   IsBoolean,
@@ -7,78 +8,60 @@ import {
   IsOptional,
   IsString,
 } from 'class-validator';
-import { RequestCategory, UrgencyLevel } from 'prisma/generated'; // Ba tumar prisma generated path
+import { RequestCategory, UrgencyLevel } from 'prisma/generated';
 
-/**
- * 1. Create Request DTO
- * UI: image_01da41.png (Request Help Form)
- */
 export class CreateRequestDto {
-  @ApiProperty({
-    example: 'Website Development for E-commerce',
-    description: 'Title of the service request',
-  })
-  @IsString()
+  @ApiProperty({ example: 'E-commerce Website' })
+  @IsString() @IsNotEmpty()
   title: string;
 
-  @ApiProperty({
-    example:
-      'I need a full-stack developer to build an e-commerce website using Next.js and NestJS.',
-    description: 'Detailed description of the request',
-  })
-  @IsString()
+  @ApiProperty({ example: 'Full stack development needed' })
+  @IsString() @IsNotEmpty()
   description: string;
 
-  @ApiProperty({
-    example: RequestCategory.DURING_STORM,
-    description: 'Category of the request',
-    enum: RequestCategory,
-  })
+  @ApiProperty({ enum: RequestCategory })
   @IsEnum(RequestCategory)
   category: RequestCategory;
 
-  @ApiProperty({
-    example: 'Dhaka, Bangladesh',
-    description: 'Location where the service is required',
-  })
-  @IsString()
+  @ApiProperty({ example: 'Dhaka, Bangladesh' })
+  @IsString() @IsNotEmpty()
   location: string;
 
-  @ApiPropertyOptional({
-    example: '2 weeks',
-    description: 'Estimated duration to complete the task',
-  })
-  @IsString()
-  @IsOptional()
+  @ApiPropertyOptional({ example: '2 weeks' })
+  @IsOptional() @IsString()
   estimated_duration?: string;
 
-  @ApiProperty({
-    example: UrgencyLevel.HIGH,
-    description: 'Urgency level of the request',
-    enum: UrgencyLevel,
-  })
+  @ApiProperty({ enum: UrgencyLevel })
   @IsEnum(UrgencyLevel)
   urgency_level: UrgencyLevel;
 
-  @ApiPropertyOptional({
-    example: ['Next.js', 'NestJS', 'PostgreSQL'],
-    description: 'List of required skills',
-    type: [String],
-  })
+  @ApiPropertyOptional({ type: [String] })
   @IsArray()
   @IsString({ each: true })
+  @Transform(({ value }) => {
+    if (typeof value === 'string') return value.split(',').map(v => v.trim());
+    return value;
+  })
+  skills_needed: string[];
+
+  @ApiPropertyOptional({ type: 'string', format: 'binary' })
   @IsOptional()
-  skills_needed?: string[];
+  file?: any; // Swagger field only
 }
 
-/**
- * 3. Create Feedback DTO
- * UI: image_01cf00.png (Complete Request Screen)
- */
+
+
+
 export class CreateFeedbackDto {
   @ApiProperty({
     example: true,
     description: 'Rating type (true for positive, false for negative)',
+  })
+  @Transform(({ value }) => {
+    // form-data sends "true" as a string; this converts it to actual boolean
+    if (value === 'true' || value === true) return true;
+    if (value === 'false' || value === false) return false;
+    return value;
   })
   @IsBoolean()
   @IsNotEmpty()

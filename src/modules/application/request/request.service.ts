@@ -18,7 +18,11 @@ export class RequestService {
     private readonly messageGateway: MessageGateway,
   ) {}
 
-  async createRequest(seeker_id: string, dto: CreateRequestDto) {
+  async createRequest(
+    seeker_id: string,
+    dto: CreateRequestDto,
+    file: Express.Multer.File,
+  ) {
     // 1. Validate Seeker
     const user = await this.prisma.user.findUnique({
       where: { id: seeker_id },
@@ -30,51 +34,77 @@ export class RequestService {
       throw new BadRequestException('User is not a seeker');
     }
 
-    // 2. Atomic Transaction: Create Request and Notifications
-    const result = await this.prisma.$transaction(async (tx) => {
-      // Create the Request
-      const request = await tx.request.create({
-        data: {
-          ...dto,
-          status: RequestStatus.PENDING,
-          seeker: { connect: { id: seeker_id } },
-        },
-      });
+    let attachmentPath = '';
+    if (file) {
+      attachmentPath = `${Date.now()}-${file.originalname.replace(/\s+/g, '_')}`;
+      await TajulStorage.put(attachmentPath, file.buffer);
+    }
 
-      // Fetch all volunteer IDs
-      const volunteers = await tx.user.findMany({
-        where: { type: UserType.VOLUNTEER },
-        select: { id: true },
-      });
-
-      // 3. Create Notifications in Bulk
-      if (volunteers.length > 0) {
-        await tx.notification.createMany({
-          data: volunteers.map((volunteer) => ({
-            sender_id: seeker_id,
-            receiver_id: volunteer.id,
-            message: `New request created ${request.title} by ${user.name}`,
-            entity_id: request.id,
-          })),
+    try {
+      const result = await this.prisma.$transaction(async (tx) => {
+        const request = await tx.request.create({
+          data: {
+            title: dto.title,
+            description: dto.description,
+            category: dto.category,
+            location: dto.location,
+            estimated_duration: dto.estimated_duration,
+            urgency_level: dto.urgency_level,
+            skills_needed: dto.skills_needed,
+            status: RequestStatus.PENDING,
+            seeker_id: seeker_id,
+            attachments: attachmentPath
+              ? {
+                  create: {
+                    path: attachmentPath,
+                    name: file.originalname,
+                    type: file.mimetype,
+                  },
+                }
+              : undefined,
+          },
+          include: { attachments: true },
         });
-      }
 
-      return { request, volunteerIds: volunteers.map((v) => v.id) };
-    });
+        // const volunteers = await tx.user.findMany({
+        //   where: { type: UserType.VOLUNTEER },
+        //   select: { id: true },
+        // });
 
-    // 4. Real-time Emission (Outside transaction to prevent blocking)
-    this.messageGateway.server
-      .to(result.volunteerIds)
-      .emit('new_request', result.request);
+        // if (volunteers.length > 0) {
+        //   await tx.notification.createMany({
+        //     data: volunteers.map((volunteer) => ({
+        //       sender_id: seeker_id,
+        //       receiver_id: volunteer.id,
+        //       content: `New request: ${request.title} by ${user.name}`,
+        //       entity_id: request.id,
+        //     })),
+        //   });
+        // }
 
-    return {
-      success: true,
-      message: 'Request created successfully',
-      data: result.request,
-    };
+        // return { request, volunteerIds: volunteers.map((v) => v.id) };
+        return { request };
+      });
+
+      // 4. Real-time Emission (Outside transaction to prevent blocking)
+      // this.messageGateway.server
+      //   .to(result.volunteerIds)
+      //   .emit('new_request', result.request);
+
+      return {
+        success: true,
+        message: 'Request created successfully',
+        data: result.request,
+        // volunteerIds: result.volunteerIds,
+      };
+    } catch (error) {
+      // console.error('Prisma Validation Error:', error);
+      throw new BadRequestException(
+        'Failed to create request. Technical details: ' + error.message,
+      );
+    }
   }
 
-  // 4. Get all pending requests for Volunteers
   async getAvailableRequests() {
     const requests = await this.prisma.request.findMany({
       where: {
@@ -132,6 +162,78 @@ export class RequestService {
     return {
       success: true,
       message: 'Latest available requests fetched successfully',
+      data: mappedData,
+    };
+  }
+
+  async getAllDisasters(query: {
+    category?: string;
+    page?: number;
+    limit?: number;
+  }) {
+    const { category, page = 1, limit = 10 } = query;
+    const skip = (page - 1) * limit;
+
+    // 1. Filtering Logic
+    const where: any = {
+      status: RequestStatus.PENDING,
+    };
+
+    if (category && !['disaster', 'all'].includes(category.toLowerCase())) {
+      where.category = category;
+    }
+
+    const [requests, totalCount] = await Promise.all([
+      this.prisma.request.findMany({
+        where,
+        skip,
+        take: Number(limit),
+        include: {
+          seeker: true,
+          attachments: {
+            take: 1,
+          },
+        },
+        orderBy: {
+          created_at: 'desc',
+        },
+      }),
+      this.prisma.request.count({ where }),
+    ]);
+
+    if (!requests.length && page === 1) {
+      throw new NotFoundException('No disasters found');
+    }
+
+    const mappedData = requests.map((req) => ({
+      id: req.id,
+      disaster_image:
+        req.attachments.length > 0
+          ? TajulStorage.url(req.attachments[0].path)
+          : null,
+      title: req.title,
+      time_ago: formatDistanceToNow(new Date(req.created_at), {
+        addSuffix: true,
+      }),
+      user: {
+        name: req.seeker.name,
+        username: `@${req.seeker.username || req.seeker.name.toLowerCase().replace(/\s+/g, '')}`,
+        avatar: req.seeker.avatar
+          ? TajulStorage.url(
+              `${appConfig().storageUrl.avatar}/${req.seeker.avatar}`,
+            )
+          : null,
+      },
+    }));
+
+    return {
+      success: true,
+      message: 'Disasters fetched successfully',
+      meta: {
+        total: totalCount,
+        page: Number(page),
+        last_page: Math.ceil(totalCount / limit),
+      },
       data: mappedData,
     };
   }
