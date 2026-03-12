@@ -7,62 +7,72 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
-import { StartStreamDto } from 'src/modules/application/live/dto/response-dto';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiOperation,
+  ApiParam,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
+import { StreamService } from 'src/modules/application/live/stream/stream.service';
 import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
-import { LivekitService } from '../livekit/livekit.service';
+import { PrismaService } from 'src/prisma/prisma.service';
 
 @ApiTags('Live Stream')
 @Controller('v1/streams')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 export class StreamController {
-  constructor(private readonly livekitService: LivekitService) {}
+  constructor(
+    private readonly streamService: StreamService,
+    private readonly prisma: PrismaService,
+  ) {}
 
-  // 1. Host jokhon live shuru korbe
-  @ApiOperation({ summary: 'Start a new live stream as a host' })
-  @ApiBody({ type: StartStreamDto })
+  @UseGuards(JwtAuthGuard)
   @Post('start')
-  async startStream(@Req() req: any, @Body() body: StartStreamDto) {
-    const user_id = req.user.userId;
-    const room_name = `live_${user_id}_${Date.now()}`;
-
-    const token = await this.livekitService.generateStreamToken(
-      room_name,
-      user_id,
-      true,
-    );
-
-    return {
-      status: 'success',
-      data: {
-        room_name,
-        token,
-        title: body.title,
-        livekit_url: process.env.LIVEKIT_URL,
+  @ApiOperation({ summary: 'Start a new stream' })
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        title: { type: 'string' },
       },
-    };
+    },
+  })
+  async start(@Req() req, @Body() body: { title: string }) {
+    // req.user.id is usually attached by the JwtStrategy
+    return this.streamService.startStream(req.user.id, body.title);
   }
 
-  // 2. Viewer jokhon kono live-e join korbe
-  @ApiOperation({ summary: 'Join an existing stream as a viewer' })
-  @Get('join/:room_name')
-  async joinStream(@Req() req: any, @Param('room_name') room_name: string) {
-    const viewer_id = req.user.userId;
+  // PUBLIC: Jekono user active live list dekhte parbe
+  @Get('active-list')
+  @ApiOperation({ summary: 'Get all currently active live streams' })
+  @ApiResponse({
+    status: 200,
+    description: 'Returns a list of active streams.',
+  })
+  async getActive() {
+    return this.streamService.getActiveStreams();
+  }
 
-    // Viewer er jonno token (is_host = false)
-    const token = await this.livekitService.generateStreamToken(
+  @Get('join/:room_name')
+  @ApiOperation({ summary: 'Join a stream as a guest (Public)' })
+  @ApiParam({
+    name: 'room_name',
+    type: 'string',
+    description: 'The unique name of the room to join',
+  })
+  @ApiResponse({ status: 200, description: 'Returns a guest access token.' })
+  async join(@Param('room_name') room_name: string) {
+    // Logic for generating a unique guest ID
+    const guestId = `guest_${Math.floor(Math.random() * 10000)}`;
+
+    const token = await this.streamService.getPublicJoinToken(
       room_name,
-      viewer_id,
-      false,
+      guestId,
     );
 
-    return {
-      status: 'success',
-      data: {
-        token,
-        livekit_url: process.env.LIVEKIT_URL,
-      },
-    };
+    return { token, guestId }; // Returning guestId is helpful for frontend tracking
   }
 }

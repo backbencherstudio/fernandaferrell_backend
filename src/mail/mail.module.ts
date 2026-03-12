@@ -1,38 +1,40 @@
 import { MailerModule } from '@nestjs-modules/mailer';
-import { Global, Module } from '@nestjs/common';
 import { EjsAdapter } from '@nestjs-modules/mailer/dist/adapters/ejs.adapter';
-import { MailService } from './mail.service';
-import appConfig from '../config/app.config';
 import { BullModule } from '@nestjs/bullmq';
+import { Global, Module } from '@nestjs/common';
+import { ConfigModule, ConfigService } from '@nestjs/config';
+import { join } from 'path';
+import { MailService } from './mail.service';
 import { MailProcessor } from './processors/mail.processor';
 
 @Global()
 @Module({
   imports: [
-    MailerModule.forRoot({
-      // transport: 'smtps://user@example.com:topsecret@smtp.example.com',
-      // or
-      transport: {
-        host: appConfig().mail.host,
-        port: +appConfig().mail.port,
-        secure: false,
-        auth: {
-          user: appConfig().mail.user,
-          pass: appConfig().mail.password,
+    MailerModule.forRootAsync({
+      imports: [ConfigModule],
+      inject: [ConfigService],
+      useFactory: async (config: ConfigService) => ({
+        transport: {
+          host: config.get('MAIL_HOST'),
+          port: config.get<number>('MAIL_PORT'),
+          secure: false,
+          auth: {
+            user: config.get('MAIL_USERNAME'),
+            pass: config.get('MAIL_PASSWORD'),
+          },
         },
-      },
-      defaults: {
-        from: appConfig().mail.from,
-      },
-      template: {
-        // dir: join(__dirname, 'templates'),
-        dir: process.cwd() + '/dist/mail/templates/',
-        // adapter: new HandlebarsAdapter(), // or new PugAdapter() or new EjsAdapter()
-        adapter: new EjsAdapter(),
-        options: {
-          // strict: true,
+        defaults: {
+          from: `"${config.get('MAIL_FROM_NAME')}" <${config.get('MAIL_FROM_ADDRESS')}>`,
         },
-      },
+        template: {
+          // dist ফোল্ডার থেকে টেমপ্লেট লোড করার জন্য path.join ব্যবহার করা সেফ
+          dir: join(process.cwd(), 'dist', 'mail', 'templates'),
+          adapter: new EjsAdapter(),
+          options: {
+            strict: false,
+          },
+        },
+      }),
     }),
     BullModule.registerQueue({
       name: 'mail-queue',

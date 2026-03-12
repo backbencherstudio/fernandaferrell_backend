@@ -62,9 +62,13 @@ export class VerifyTokenDto {
 }
 
 export class ChangePasswordDto {
+  @ApiProperty({ example: 'john@example.com' })
+  @IsEmail()
+  email: string;
+
   @ApiProperty({ example: 'password123' })
   @MinLength(8, { message: 'Password should be minimum 8 characters' })
-  password: string;
+  old_password: string;
 
   @ApiProperty({ example: 'password123' })
   @MinLength(8, { message: 'Password should be minimum 8 characters' })
