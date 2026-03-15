@@ -487,19 +487,32 @@ export class RequestService {
         'You are not authorized to give feedback for this request',
       );
     }
+
     return this.prisma.$transaction(async (tx) => {
-      // Status update to COMPLETED
+      // 1. Status update to COMPLETED
       await tx.request.update({
         where: { id: request_id },
         data: { status: RequestStatus.COMPLETED },
       });
 
-      // Create feedback
+      // 2. Logic: Volunteer jodi feedback dey, tahole tar point +1 hobe
+      if (request.volunteer_id === user_id) {
+        await tx.user.update({
+          where: { id: user_id },
+          data: {
+            points: {
+              increment: 1,
+            },
+          },
+        });
+      }
+
+      // 3. Create feedback
       return tx.feedback.create({
         data: {
           rating_type: dto.rating_type,
           comment: dto.comment,
-          request_id,
+          request_id: request_id,
           user_id: user_id,
         },
       });

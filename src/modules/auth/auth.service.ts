@@ -88,7 +88,6 @@ export class AuthService {
     type?: string;
   }) {
     try {
-     
       // Check if email already exist
       const userEmailExist = await this.userRepository.exist({
         field: 'email',
@@ -209,11 +208,19 @@ export class AuthService {
 
       if (updateUserDto.name) data.name = updateUserDto.name;
 
-      if (updateUserDto.first_name) data.first_name = updateUserDto.first_name;
-
-      if (updateUserDto.last_name) data.last_name = updateUserDto.last_name;
-
-      if (updateUserDto.address) data.address = updateUserDto.address;
+      if (updateUserDto.phone_number) {
+        const user = await this.userRepository.exist({
+          field: 'phone_number',
+          value: updateUserDto.phone_number,
+        });
+        if (user) {
+          return {
+            success: false,
+            message: 'Phone number already exist',
+          };
+        }
+        data.phone_number = updateUserDto.phone_number;
+      }
 
       if (image) {
         // delete old image from storage
@@ -854,4 +861,33 @@ export class AuthService {
     }
   }
   // --------- end 2FA ---------
+
+  async allVolunteer(user_id: string) {
+    try {
+      // Check if the requesting user exists
+      const user = await this.userRepository.getUserDetails(user_id);
+
+      if (!user) {
+        return {
+          success: false,
+          message: 'User not found',
+        };
+      }
+
+      const volunteers = await this.userRepository.getAllVolunteers();
+
+      return {
+        success: true,
+        message: 'Volunteers fetched successfully',
+        data: volunteers,
+      };
+    } catch (error) {
+      // Production e error log kora bhalo
+      console.error('Error fetching volunteers:', error);
+      return {
+        success: false,
+        message: error.message || 'Internal server error',
+      };
+    }
+  }
 }

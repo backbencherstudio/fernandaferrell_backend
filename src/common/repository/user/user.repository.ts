@@ -63,6 +63,25 @@ export class UserRepository {
     return user;
   }
 
+  async getAllVolunteers() {
+    return await this.prisma.user.findMany({
+      where: {
+        type: UserType.VOLUNTEER,
+      },
+      select: {
+        id: true,
+        name: true,
+        email: true,
+        type: true,
+        points: true,
+        created_at: true,
+      },
+      orderBy: {
+        created_at: 'desc',
+      },
+    });
+  }
+
   /**
    * Check existance
    * @returns

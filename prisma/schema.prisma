@@ -59,6 +59,7 @@ model User {
   name     String? @db.VarChar(255)
   location String? @db.VarChar(255)
   language String? @db.VarChar(100)
+  points   Int?    @default(0)
 
   // billing info  
   billing_id        String?

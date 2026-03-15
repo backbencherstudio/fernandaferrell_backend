@@ -104,7 +104,6 @@ export class RequestController {
               status: { type: 'string' },
               priority: { type: 'string' },
               time_ago: { type: 'string' },
-              // Add other fields as needed for Swagger
             },
           },
         },
@@ -182,7 +181,7 @@ export class RequestController {
     @Body() dto: CreateFeedbackDto,
     @Req() req: any,
   ) {
-    const user_id = req.user.id; // JWT Guard theke user ID nite hobe
+    const user_id = req.user.id;
     return this.requestService.submitFeedback(user_id, id, dto);
   }
 }

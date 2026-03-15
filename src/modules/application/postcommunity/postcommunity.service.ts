@@ -6,7 +6,6 @@ import {
 } from '@nestjs/common';
 import { formatDistanceToNow } from 'date-fns';
 import { TajulStorage } from 'src/common/lib/Disk/TajulStorage';
-import appConfig from 'src/config/app.config';
 import { PrismaService } from 'src/prisma/prisma.service';
 import {
   CreateCommentDto,
@@ -116,9 +115,7 @@ export class PostCommunityService {
     const formattedPosts = posts.map((post) => {
       let fullImageUrl = post.image_url;
       if (post.image_url) {
-        fullImageUrl = TajulStorage.url(
-          `${appConfig().storageUrl.postCommunity}${post.image_url}`,
-        );
+        fullImageUrl = `/public/storage/post-community/${post.image_url}`;
       }
 
       return {
@@ -159,27 +156,17 @@ export class PostCommunityService {
     if (!post) throw new NotFoundException('Post not found');
 
     // 1. Post Author Avatar Formatting
-    const postAuthorAvatar = post.user.avatar
-      ? TajulStorage.url(`${appConfig().storageUrl.avatar}/${post.user.avatar}`)
-      : null;
+    const postAuthorAvatar = `/public/storage/avatar/${post.user.avatar}`;
 
     // 2. Post Image URL Formatting
-    const fullImageUrl = post.image_url
-      ? TajulStorage.url(
-          `${appConfig().storageUrl.postCommunity}${post.image_url}`,
-        )
-      : null;
+    const fullImageUrl = `/public/storage/post-community/${post.image_url}`;
 
     // 3. Comments User Avatar Formatting
     const formattedComments = post.comments.map((comment) => ({
       ...comment,
       user: {
         ...comment.user,
-        avatar: comment.user.avatar
-          ? TajulStorage.url(
-              `${appConfig().storageUrl.avatar}/${comment.user.avatar}`,
-            )
-          : null,
+        avatar: `/public/storage/avatar/${comment.user.avatar}`,
       },
     }));
 
@@ -250,7 +237,7 @@ export class PostCommunityService {
         user: {
           ...comment.user,
           avatar: comment.user.avatar
-            ? TajulStorage.url(comment.user.avatar)
+            ? `/public/storage/avatar/${comment.user.avatar}`
             : null,
         },
         // Recursion happens here

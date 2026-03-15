@@ -17,9 +17,11 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
   ApiBody,
+  ApiConsumes,
   ApiExcludeEndpoint,
   ApiOkResponse,
   ApiOperation,
+  ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
 import { Request, Response } from 'express';
@@ -29,7 +31,10 @@ import {
   CreateUserResDto,
   ForgotPasswordDto,
   LoginUserResDto,
+  ResetPasswordDto,
+  UpdateUserResDto,
   VerifyTokenDto,
+  VolunteerListResDto,
 } from 'src/modules/auth/dto/create-user-res.dto';
 import { LocalAuthGuard } from 'src/modules/auth/guards/local-auth.guard';
 import { AuthService } from './auth.service';
@@ -149,8 +154,18 @@ export class AuthController {
   }
 
   // *update user
-  @ApiExcludeEndpoint()
+  // @ApiExcludeEndpoint()
   @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    type: UpdateUserResDto,
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'User updated successfully',
+    type: UpdateUserResDto,
+  })
   @Patch('update')
   @UseInterceptors(
     FileInterceptor('image', {
@@ -242,8 +257,11 @@ export class AuthController {
   }
 
   // *reset password if user forget the password
-  @ApiExcludeEndpoint()
+  // @ApiExcludeEndpoint()
   @ApiOperation({ summary: 'Reset password' })
+  @ApiBody({
+    type: ResetPasswordDto,
+  })
   @Post('reset-password')
   async resetPassword(
     @Body() data: { email: string; token: string; password: string },
@@ -573,4 +591,17 @@ export class AuthController {
     }
   }
   // --------- end 2FA ---------
+
+  @ApiOperation({ summary: 'Get all volunteers' })
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth()
+  @ApiOkResponse({
+    description: 'Get all volunteers',
+    type: [VolunteerListResDto],
+  })
+  @Get('all-volunteer')
+  async allVolunteer(@Req() req: any) {
+    const user_id = req.user.userId;
+    return await this.authService.allVolunteer(user_id);
+  }
 }
