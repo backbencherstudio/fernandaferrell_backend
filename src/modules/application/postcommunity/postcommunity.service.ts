@@ -16,13 +16,13 @@ import {
 export class PostCommunityService {
   constructor(private prisma: PrismaService) {}
 
-  // 1. Create a Post
+
   async createPost(
     userId: string,
     dto: CreatePostDto,
     file?: Express.Multer.File,
   ) {
-    // 1. Validate User and Permissions
+
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { type: true },
