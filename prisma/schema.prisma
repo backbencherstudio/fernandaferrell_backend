@@ -16,6 +16,8 @@ model Account {
   user_id String
   user    User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
+ 
+
   type                String?
   provider            String?
   provider_account_id String?
@@ -60,6 +62,8 @@ model User {
   location String? @db.VarChar(255)
   language String? @db.VarChar(100)
   points   Int?    @default(0)
+
+  
 
   // billing info  
   billing_id        String?

@@ -1,10 +1,11 @@
 import {
   BadRequestException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
 import { formatDistanceToNow } from 'date-fns/formatDistanceToNow';
-import { RequestStatus, UserType } from 'prisma/generated';
+import { Prisma, RequestStatus, UserType } from 'prisma/generated';
 import { TajulStorage } from 'src/common/lib/Disk/TajulStorage';
 import appConfig from 'src/config/app.config';
 import { MessageGateway } from 'src/modules/chat/message/message.gateway';
@@ -146,6 +147,7 @@ export class RequestService {
           },
           seeker: {
             select: {
+              id: true,
               name: true,
               username: true,
               avatar: true,
@@ -180,6 +182,7 @@ export class RequestService {
       })),
       time_ago: formatDistanceToNow(req.created_at, { addSuffix: true }),
       user: {
+        id: req.seeker.id,
         name: req.seeker.name,
         username: `@${req.seeker.name.toLowerCase().replace(/\s+/g, '')}`,
         avatar: req.seeker.avatar
@@ -194,6 +197,124 @@ export class RequestService {
     return {
       success: true,
       message: 'Latest available requests fetched successfully',
+      data: mappedData,
+      meta: {
+        total_items: total,
+        current_page: page,
+        limit: limit,
+        total_pages: Math.ceil(total / limit),
+      },
+    };
+  }
+
+  async getCompletedRequests(query: {
+    page?: number;
+    limit?: number;
+    user_id: string;
+  }) {
+    const page = Number(query.page) || 1;
+    const limit = Number(query.limit) || 10;
+    const skip = (page - 1) * limit;
+
+    // Filter for COMPLETED status where user is either Seeker or Volunteer
+    const whereCondition: Prisma.RequestWhereInput = {
+      status: RequestStatus.ACCEPTED, // Changed from ACCEPTED to COMPLETED based on your logic
+      OR: [{ seeker_id: query.user_id }, { volunteer_id: query.user_id }],
+    };
+
+    // 1. Fetch total count and data in parallel
+    const [total, requests] = await Promise.all([
+      this.prisma.request.count({ where: whereCondition }),
+      this.prisma.request.findMany({
+        where: whereCondition,
+        select: {
+          id: true,
+          title: true,
+          description: true,
+          category: true,
+          location: true,
+          estimated_duration: true,
+          urgency_level: true,
+          skills_needed: true,
+          status: true,
+          created_at: true,
+          attachments: {
+            select: { path: true },
+          },
+          seeker: {
+            select: {
+              id: true,
+              name: true,
+              username: true,
+              avatar: true,
+            },
+          },
+          volunteer: {
+            // Added volunteer info since the user might be the seeker
+            select: {
+              id: true,
+              name: true,
+              username: true,
+              avatar: true,
+            },
+          },
+        },
+        orderBy: { created_at: 'desc' },
+        skip,
+        take: limit,
+      }),
+    ]);
+
+    if (!requests || requests.length === 0) {
+      throw new NotFoundException('No completed requests found for this user');
+    }
+
+    // 2. Map data
+    const mappedData = requests.map((req) => {
+      // Determine the "Other Party" to show in the UI (if I am seeker, show volunteer and vice versa)
+      const isSeeker = req.seeker.id === query.user_id;
+      const otherParty = isSeeker ? req.volunteer : req.seeker;
+
+      return {
+        id: req.id,
+        title: req.title,
+        description: req.description,
+        priority: req.urgency_level,
+        category: req.category,
+        location: req.location,
+        duration: req.estimated_duration,
+        status: req.status,
+        role_in_request: isSeeker ? 'SEEKER' : 'VOLUNTEER',
+        skills: req.skills_needed.join(', '),
+        attachments: req.attachments.map((attachment) => ({
+          url: TajulStorage.url(
+            `${appConfig().storageUrl.requests}/${attachment.path}`,
+          ),
+        })),
+        time_ago: formatDistanceToNow(new Date(req.created_at), {
+          addSuffix: true,
+        }),
+        // Display the person the user interacted with
+        counterpart: otherParty
+          ? {
+              id: otherParty.id,
+              name: otherParty.name,
+              username: otherParty.username
+                ? `@${otherParty.username}`
+                : `@${otherParty.name.toLowerCase().replace(/\s+/g, '')}`,
+              avatar: otherParty.avatar
+                ? TajulStorage.url(
+                    `${appConfig().storageUrl.avatar}/${otherParty.avatar}`,
+                  )
+                : null,
+            }
+          : null,
+      };
+    });
+
+    return {
+      success: true,
+      message: 'Completed requests history fetched successfully',
       data: mappedData,
       meta: {
         total_items: total,
@@ -357,27 +478,27 @@ export class RequestService {
   async getSingleRequest(id: string) {
     const req = await this.prisma.request.findUnique({
       where: { id },
-      select: {
-        id: true,
-        title: true,
-        description: true,
-        category: true,
-        location: true,
-        attachments: {
-          select: {
-            path: true,
-          },
-        },
-        estimated_duration: true,
-        urgency_level: true,
-        skills_needed: true,
-        created_at: true,
+      include: {
+        attachments: { select: { path: true } },
         seeker: {
           select: {
+            id: true,
             name: true,
             username: true,
             avatar: true,
           },
+        },
+        feedbacks: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                avatar: true,
+              },
+            },
+          },
+          orderBy: { created_at: 'asc' },
         },
       },
     });
@@ -386,37 +507,67 @@ export class RequestService {
       throw new NotFoundException(`Request not found`);
     }
 
-    // Mapping exactly as per Image 2 (View Details)
-    const data = {
+    // ডাটা ম্যাপিং
+    const mappedData = {
       id: req.id,
       title: req.title,
       description: req.description,
-      attachments: req.attachments.map((attachment) => ({
-        path: TajulStorage.url(
-          `${appConfig().storageUrl.requests}${attachment.path}`,
-        ),
-      })),
+      status: req.status,
       priority: req.urgency_level,
       category: req.category,
       location: req.location,
       duration: req.estimated_duration,
       skills: req.skills_needed.join(', '),
-      time_ago: formatDistanceToNow(req.created_at, { addSuffix: true }),
+      attachments: req.attachments.map((attachment) => ({
+        url: TajulStorage.url(
+          `${appConfig().storageUrl.requests}/${attachment.path}`,
+        ),
+      })),
+      time_ago: formatDistanceToNow(new Date(req.created_at), {
+        addSuffix: true,
+      }),
+
       user: {
+        id: req.seeker.id,
         name: req.seeker.name,
-        username: `@${req.seeker.name.toLowerCase().replace(/\s+/g, '')}`,
+        username: req.seeker.username
+          ? `@${req.seeker.username}`
+          : `@${req.seeker.name.toLowerCase().replace(/\s+/g, '')}`,
         avatar: req.seeker.avatar
           ? TajulStorage.url(
               `${appConfig().storageUrl.avatar}/${req.seeker.avatar}`,
             )
           : null,
       },
+
+      feedbacks: req.feedbacks.map((f) => {
+        let role = 'OTHER';
+        if (f.user_id === req.seeker_id) role = 'SEEKER';
+        else if (f.user_id === req.volunteer_id) role = 'VOLUNTEER';
+
+        return {
+          id: f.id,
+          rating: f.rating_type,
+          comment: f.comment,
+          type: role,
+          created_at: f.created_at,
+          author: {
+            id: f.user.id,
+            name: f.user.name,
+            avatar: f.user.avatar
+              ? TajulStorage.url(
+                  `${appConfig().storageUrl.avatar}/${f.user.avatar}`,
+                )
+              : null,
+          },
+        };
+      }),
     };
 
     return {
       success: true,
-      message: 'Request details fetched successfully',
-      data,
+      message: 'Request details and feedbacks fetched successfully',
+      data: mappedData,
     };
   }
 
@@ -466,50 +617,31 @@ export class RequestService {
   ) {
     const request = await this.prisma.request.findUnique({
       where: { id: request_id },
+      include: { feedbacks: true },
     });
 
     if (!request) throw new NotFoundException('Request not found');
 
-    const existingFeedback = await this.prisma.feedback.findFirst({
-      where: {
-        request_id: request_id,
-        user_id: user_id,
-      },
-    });
+    const isSeeker = request.seeker_id === user_id;
+    const isVolunteer = request.volunteer_id === user_id;
 
-    if (existingFeedback) {
+    console.log('isSeeker', isSeeker, 'isVolunteer', isVolunteer);
+
+    if (!isSeeker && !isVolunteer) {
+      throw new ForbiddenException('You are not authorized to give feedback');
+    }
+
+    const alreadyGaveFeedback = request.feedbacks.some(
+      (f) => f.user_id === user_id,
+    );
+    if (alreadyGaveFeedback) {
       throw new BadRequestException(
         'You have already submitted feedback for this request',
       );
     }
 
-    if (request.seeker_id !== user_id && request.volunteer_id !== user_id) {
-      throw new BadRequestException(
-        'You are not authorized to give feedback for this request',
-      );
-    }
-
     return this.prisma.$transaction(async (tx) => {
-      // 1. Status update to COMPLETED
-      await tx.request.update({
-        where: { id: request_id },
-        data: { status: RequestStatus.COMPLETED },
-      });
-
-      // 2. Logic: Volunteer jodi feedback dey, tahole tar point +1 hobe
-      if (request.volunteer_id === user_id) {
-        await tx.user.update({
-          where: { id: user_id },
-          data: {
-            points: {
-              increment: 1,
-            },
-          },
-        });
-      }
-
-      // 3. Create feedback
-      return tx.feedback.create({
+      const newFeedback = await tx.feedback.create({
         data: {
           rating_type: dto.rating_type,
           comment: dto.comment,
@@ -517,6 +649,26 @@ export class RequestService {
           user_id: user_id,
         },
       });
+
+      if (request.status !== RequestStatus.COMPLETED) {
+        await tx.request.update({
+          where: { id: request_id },
+          data: { status: RequestStatus.COMPLETED },
+        });
+      }
+
+      if (isVolunteer) {
+        await tx.user.update({
+          where: { id: user_id },
+          data: { points: { increment: 1 } },
+        });
+      }
+
+      return {
+        success: true,
+        message: 'Feedback submitted and request marked as completed',
+        data: newFeedback,
+      };
     });
   }
 }

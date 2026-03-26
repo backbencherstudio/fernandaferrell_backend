@@ -74,6 +74,24 @@ export class RequestController {
     return await this.requestService.getAvailableRequests({ page, limit });
   }
 
+  @Get('completed-requests')
+  @ApiOperation({ summary: 'Get all completed help requests sorted by latest' })
+  @ApiQuery({ name: 'page', required: false, type: Number, example: 1 })
+  @ApiQuery({ name: 'limit', required: false, type: Number, example: 10 })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Returns list of requests as seen in the UI',
+    type: [CreateRequestResponseDto],
+  })
+  async getCompletedRequests(
+    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number = 1,
+    @Query('limit', new DefaultValuePipe(10), ParseIntPipe) limit: number = 10,
+    @Req() req: any,
+  ) {
+    const user_id = req.user.userId;
+    return await this.requestService.getCompletedRequests({ page, limit, user_id });
+  }
+
   @Get('my-requests')
   @ApiOperation({ summary: 'Get all my help requests sorted by latest' })
   @ApiResponse({
@@ -181,7 +199,7 @@ export class RequestController {
     @Body() dto: CreateFeedbackDto,
     @Req() req: any,
   ) {
-    const user_id = req.user.id;
+    const user_id = req.user.userId;
     return this.requestService.submitFeedback(user_id, id, dto);
   }
 }
