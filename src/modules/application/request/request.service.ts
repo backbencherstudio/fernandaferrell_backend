@@ -7,6 +7,7 @@ import {
 import { formatDistanceToNow } from 'date-fns/formatDistanceToNow';
 import { Prisma, RequestStatus, UserType } from 'prisma/generated';
 import { TajulStorage } from 'src/common/lib/Disk/TajulStorage';
+import { NotificationRepository } from 'src/common/repository/notification/notification.repository';
 import appConfig from 'src/config/app.config';
 import { MessageGateway } from 'src/modules/chat/message/message.gateway';
 import { PrismaService } from 'src/prisma/prisma.service';
@@ -22,12 +23,12 @@ export class RequestService {
   async createRequest(
     seeker_id: string,
     dto: CreateRequestDto,
-    file: Express.Multer.File,
+    file?: Express.Multer.File,
   ) {
     // 1. Validate Seeker
     const user = await this.prisma.user.findUnique({
       where: { id: seeker_id },
-      select: { id: true, type: true, name: true }, // Optimization: Only select what you need
+      select: { id: true, type: true, name: true },
     });
 
     if (!user) throw new NotFoundException('User not found');
@@ -35,84 +36,78 @@ export class RequestService {
       throw new BadRequestException('User is not a seeker');
     }
 
+    // 2. File Upload logic
     let attachmentPath = '';
     if (file) {
       try {
-        // Generate name: e.g., 1772526..._image.jpg
         attachmentPath = `${Date.now()}-${file.originalname.replace(/\s+/g, '_')}`;
-
-        // The path relative to your storage root
         const relativePath = `requests/${attachmentPath}`;
-
-        // Upload the buffer
         await TajulStorage.put(relativePath, file.buffer);
       } catch (uploadError) {
-        console.error('Upload Error:', uploadError);
         throw new BadRequestException('Failed to upload image.');
       }
     }
 
     try {
-      const result = await this.prisma.$transaction(async (tx) => {
-        const request = await tx.request.create({
-          data: {
-            title: dto.title,
-            description: dto.description,
-            category: dto.category,
-            location: dto.location,
-            estimated_duration: dto.estimated_duration,
-            urgency_level: dto.urgency_level,
-            skills_needed: dto.skills_needed,
-            status: RequestStatus.PENDING,
-            seeker_id: seeker_id,
-            attachments: attachmentPath
-              ? {
-                  create: {
-                    path: attachmentPath,
-                    name: file.originalname,
-                    type: file.mimetype,
-                  },
-                }
-              : undefined,
-          },
-          include: { attachments: true },
-        });
-
-        // const volunteers = await tx.user.findMany({
-        //   where: { type: UserType.VOLUNTEER },
-        //   select: { id: true },
-        // });
-
-        // if (volunteers.length > 0) {
-        //   await tx.notification.createMany({
-        //     data: volunteers.map((volunteer) => ({
-        //       sender_id: seeker_id,
-        //       receiver_id: volunteer.id,
-        //       content: `New request: ${request.title} by ${user.name}`,
-        //       entity_id: request.id,
-        //     })),
-        //   });
-        // }
-
-        // return { request, volunteerIds: volunteers.map((v) => v.id) };
-        return { request };
+      // 3. Create Request
+      const request = await this.prisma.request.create({
+        data: {
+          title: dto.title,
+          description: dto.description,
+          category: dto.category,
+          location: dto.location,
+          estimated_duration: dto.estimated_duration,
+          urgency_level: dto.urgency_level,
+          skills_needed: dto.skills_needed,
+          status: RequestStatus.PENDING,
+          seeker_id: seeker_id,
+          attachments: attachmentPath
+            ? {
+                create: {
+                  path: attachmentPath,
+                  name: file.originalname,
+                  type: file.mimetype,
+                },
+              }
+            : undefined,
+        },
+        include: { attachments: true },
       });
 
-      // 4. Real-time Emission (Outside transaction to prevent blocking)
-      // this.messageGateway.server
-      //   .to(result.volunteerIds)
-      //   .emit('new_request', result.request);
+      // 4. Get ALL Volunteers
+      const volunteers = await this.prisma.user.findMany({
+        where: {
+          type: UserType.VOLUNTEER,
+        },
+        select: { id: true },
+      });
+
+      // 5. Send Notification using Repository
+      if (volunteers.length > 0) {
+        const notificationPromises = volunteers.map((volunteer) => {
+          const notificationPayload: any = {
+            sender_id: user.id,
+            receiver_id: volunteer.id,
+            text: `New request: ${request.title} by ${user.name}`,
+            type: 'new_request',
+            entity_id: request.id,
+          };
+
+          return NotificationRepository.createNotification(notificationPayload);
+        });
+
+        // Parallel execution for better speed
+        await Promise.all(notificationPromises);
+      }
 
       return {
         success: true,
-        message: 'Request created successfully',
-        data: result.request,
-        // volunteerIds: result.volunteerIds,
+        message: 'Request created and volunteers notified',
+        data: request,
       };
     } catch (error) {
-      // console.error('Prisma Validation Error:', error);
       throw new BadRequestException(
-        'Failed to create request. Technical details: ' + error.message,
+        'Failed to create request: ' + error.message,
       );
     }
   }
@@ -574,7 +569,7 @@ export class RequestService {
   async acceptRequest(user_id: string, request_id: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: user_id },
-      select: { type: true },
+      select: { type: true, name: true },
     });
 
     if (!user) throw new NotFoundException('User not found');
@@ -600,13 +595,33 @@ export class RequestService {
       throw new BadRequestException('You cannot accept your own request');
     }
 
-    return this.prisma.request.update({
+    // send notification to seeker
+
+    const updatedRequest = await this.prisma.request.update({
       where: { id: request_id },
       data: {
         volunteer_id: user_id,
         status: RequestStatus.ACCEPTED,
       },
     });
+
+    if (updatedRequest) {
+      const notificationPayload: any = {
+        sender_id: user_id,
+        receiver_id: request.seeker_id,
+        text: `Your request has been accepted by ${user.name}`,
+        type: 'request_accepted',
+        entity_id: request.id,
+      };
+
+      return NotificationRepository.createNotification(notificationPayload);
+    }
+
+    return {
+      success: true,
+      message: 'Request accepted successfully',
+      data: updatedRequest,
+    };
   }
 
   // 3. Complete & Give Feedback
@@ -615,6 +630,13 @@ export class RequestService {
     request_id: string,
     dto: CreateFeedbackDto,
   ) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: user_id },
+      select: { type: true, name: true },
+    });
+
+    if (!user) throw new NotFoundException('User not found');
+
     const request = await this.prisma.request.findUnique({
       where: { id: request_id },
       include: { feedbacks: true },
@@ -662,6 +684,23 @@ export class RequestService {
           where: { id: user_id },
           data: { points: { increment: 1 } },
         });
+      }
+
+      // Dynamic Notification logic
+      const receiverId = isSeeker ? request.volunteer_id : request.seeker_id;
+
+      // Jodi receiver_id null thake (e.g. volunteer ekhono assigned hoyni kintu system feedback allow korche),
+      // tahole notification skip korai bhalo.
+      if (receiverId) {
+        const notificationPayload = {
+          sender_id: user_id,
+          receiver_id: receiverId,
+          text: `${user.name} submitted feedback for the request`,
+          type: 'feedback_submitted' as any,
+          entity_id: request.id,
+        };
+
+        await NotificationRepository.createNotification(notificationPayload);
       }
 
       return {

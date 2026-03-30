@@ -16,8 +16,6 @@ model Account {
   user_id String
   user    User   @relation(fields: [user_id], references: [id], onDelete: Cascade)
 
- 
-
   type                String?
   provider            String?
   provider_account_id String?
@@ -63,7 +61,8 @@ model User {
   language String? @db.VarChar(100)
   points   Int?    @default(0)
 
-  
+  fcm_token   String?
+  device_type String?
 
   // billing info  
   billing_id        String?
@@ -338,6 +337,10 @@ model Notification {
   notification_event    NotificationEvent? @relation(fields: [notification_event_id], references: [id])
 
   entity_id String?
+
+  sign_of_disaster Boolean  @default(true)
+  latest_news      Boolean  @default(true)
+  message_news     Boolean  @default(true)
 }
 
 model video_calls {

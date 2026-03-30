@@ -1,23 +1,27 @@
 import {
+  Body,
   Controller,
   Delete,
   Get,
   HttpCode,
   HttpStatus,
   Param,
+  Patch,
   Req,
   UseGuards,
 } from '@nestjs/common';
 import {
   ApiBearerAuth,
+  ApiBody,
   ApiOperation,
   ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
 import { Request } from 'express';
-import { NotificationListResponse } from 'src/modules/admin/notification/dto/create-notification.dto';
+import { NotificationListResponse, UpdateNotificationDtoRes } from 'src/modules/admin/notification/dto/create-notification.dto';
 import { JwtAuthGuard } from '../../../modules/auth/guards/jwt-auth.guard';
 import { NotificationService } from './notification.service';
+import { UpdateNotificationDto } from 'src/modules/application/notification/dto/update-notification.dto';
 
 @ApiBearerAuth()
 @ApiTags('Notification')
@@ -46,6 +50,20 @@ export class NotificationController {
         message: error.message,
       };
     }
+  }
+
+
+  @Patch('update-settings')
+  @HttpCode(HttpStatus.OK)
+  @ApiBody({ type: UpdateNotificationDtoRes })
+  @ApiResponse({
+    status: HttpStatus.OK,
+    description: 'Notification settings updated successfully',
+    type: [UpdateNotificationDtoRes],
+  })
+  async update(@Body() updateDto: UpdateNotificationDto, @Req() req: any) {
+    const userId = req.user.id;
+    return this.notificationService.updateSettings(userId, updateDto);
   }
 
   @ApiOperation({ summary: 'Delete notification' })

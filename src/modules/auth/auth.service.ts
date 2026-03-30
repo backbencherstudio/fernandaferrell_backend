@@ -162,21 +162,51 @@ export class AuthService {
     }
   }
   // done
-  async login({ email, userId }) {
+  async login({
+    email,
+    userId,
+    fcm_token,
+  }: {
+    email: string;
+    userId: string;
+    fcm_token?: string;
+  }) {
+    const userActive = await this.prisma.user.findFirst({
+      where: {
+        id: userId,
+      },
+    });
+
+    if (!userActive) {
+      return {
+        success: false,
+        message: 'Please wait for admin approval',
+      };
+    }
+
     try {
+      if (fcm_token) {
+        await this.prisma.user.update({
+          where: { id: userId },
+          data: {
+            fcm_token: fcm_token,
+          },
+        });
+      }
+      // ---------------------------------------------------------
+
+      const payload = { email: email, sub: userId, type: 'user' };
+
+      const accessToken = this.jwtService.sign(payload, { expiresIn: '10d' });
+      const refreshToken = this.jwtService.sign(payload, { expiresIn: '30d' });
+
       const user = await this.userRepository.getUserDetails(userId);
 
-      const payload = { email: email, sub: userId, type: user?.type };
-
-      const accessToken = this.jwtService.sign(payload, { expiresIn: '1h' });
-      const refreshToken = this.jwtService.sign(payload, { expiresIn: '7d' });
-
-      // store refreshToken
       await this.redis.set(
         `refresh_token:${user.id}`,
         refreshToken,
         'EX',
-        60 * 60 * 24 * 7, // 7 days in seconds
+        60 * 60 * 24 * 7,
       );
 
       return {
@@ -187,6 +217,7 @@ export class AuthService {
           access_token: accessToken,
           refresh_token: refreshToken,
         },
+        userid: user.id,
         type: user.type,
       };
     } catch (error) {

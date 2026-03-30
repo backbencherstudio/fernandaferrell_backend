@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { UpdateNotificationDto } from 'src/modules/application/notification/dto/update-notification.dto';
 import { TajulStorage } from '../../../common/lib/Disk/TajulStorage';
 import appConfig from '../../../config/app.config';
 import { PrismaService } from '../../../prisma/prisma.service';
@@ -73,6 +74,37 @@ export class NotificationService {
         message: error.message,
       };
     }
+  }
+
+  async updateSettings(userId: string, data: UpdateNotificationDto) {
+    const settings = await this.prisma.notification.upsert({
+      where: { id: userId },
+      update: {
+        sign_of_disaster: data.sign_of_disaster,
+        latest_news: data.latest_news,
+        message_news: data.message_news,
+      },
+      create: {
+        id: userId,
+        sign_of_disaster: data.sign_of_disaster ?? true,
+        latest_news: data.latest_news ?? true,
+        message_news: data.message_news ?? true,
+      },
+    });
+
+    const updatedFields = Object.keys(data)
+      .map((key) => key.replace(/_/g, ' '))
+      .join(', ');
+
+    const successMessage = updatedFields
+      ? `${updatedFields.charAt(0).toUpperCase() + updatedFields.slice(1)} updated successfully`
+      : 'Notification settings updated successfully';
+
+    return {
+      success: true,
+      message: successMessage,
+      data: settings,
+    };
   }
 
   async remove(id: string, user_id: string) {

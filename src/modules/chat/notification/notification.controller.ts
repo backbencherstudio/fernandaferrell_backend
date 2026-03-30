@@ -2,8 +2,10 @@ import { Controller, Get, UseGuards, Req, Param, Patch } from '@nestjs/common';
 import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
 import { NotificationService } from './notification.service';
 import { Request } from 'express';
+import { ApiExcludeController } from '@nestjs/swagger';
 
 @Controller('notification')
+@ApiExcludeController()
 @UseGuards(JwtAuthGuard) // Ensures that only authenticated users can access these endpoints
 export class NotificationController {
 

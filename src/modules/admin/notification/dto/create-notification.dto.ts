@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString } from 'class-validator';
+import { IsBoolean, IsNotEmpty, IsString } from 'class-validator';
 
 export class CreateNotificationDto {
   @ApiProperty({
@@ -33,10 +33,19 @@ export class CreateNotificationDto {
   @IsNotEmpty()
   @IsString()
   entity_id: string;
+
+  @ApiProperty({ default: true })
+  @IsBoolean()
+  sign_of_disaster: boolean;
+
+  @ApiProperty({ default: true })
+  @IsBoolean()
+  latest_news: boolean;
+
+  @ApiProperty({ default: true })
+  @IsBoolean()
+  message_news: boolean;
 }
-
-
-
 
 class UserMinifiedDto {
   @ApiProperty() id: string;
@@ -51,7 +60,7 @@ export class NotificationResponseDto {
   @ApiProperty() receiver_id: string;
   @ApiProperty() entity_id: string;
   @ApiProperty() created_at: Date;
-  
+
   @ApiProperty({ type: UserMinifiedDto })
   sender: UserMinifiedDto;
 
@@ -68,4 +77,19 @@ export class NotificationListResponse {
 
   @ApiProperty({ type: [NotificationResponseDto] })
   data: NotificationResponseDto[];
+}
+
+
+export class UpdateNotificationDtoRes {
+  @ApiProperty({ default: true })
+  @IsBoolean()
+  sign_of_disaster: boolean;
+
+  @ApiProperty({ default: true })
+  @IsBoolean()
+  latest_news: boolean;
+
+  @ApiProperty({ default: true })
+  @IsBoolean()
+  message_news: boolean;
 }
