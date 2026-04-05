@@ -12,67 +12,51 @@ import {
   ApiBody,
   ApiOperation,
   ApiParam,
-  ApiResponse,
   ApiTags,
 } from '@nestjs/swagger';
-import { StreamService } from 'src/modules/application/live/stream/stream.service';
 import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
-import { PrismaService } from 'src/prisma/prisma.service';
+import { StreamService } from './stream.service';
 
 @ApiTags('Live Stream')
 @Controller('v1/streams')
-@ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
 export class StreamController {
-  constructor(
-    private readonly streamService: StreamService,
-    private readonly prisma: PrismaService,
-  ) {}
+  constructor(private readonly streamService: StreamService) {}
 
+  @ApiBearerAuth()
   @UseGuards(JwtAuthGuard)
   @Post('start')
-  @ApiOperation({ summary: 'Start a new stream' })
+  @ApiOperation({ summary: 'Host starts live and auto-recording' })
   @ApiBody({
-    schema: {
-      type: 'object',
-      properties: {
-        title: { type: 'string' },
-      },
-    },
+    schema: { type: 'object', properties: { title: { type: 'string' } } },
   })
   async start(@Req() req, @Body() body: { title: string }) {
-    // req.user.id is usually attached by the JwtStrategy
-    return this.streamService.startStream(req.user.id, body.title);
+    return this.streamService.startStream(req.user.userId, body.title);
   }
 
-  // PUBLIC: Jekono user active live list dekhte parbe
   @Get('active-list')
-  @ApiOperation({ summary: 'Get all currently active live streams' })
-  @ApiResponse({
-    status: 200,
-    description: 'Returns a list of active streams.',
-  })
+  @ApiOperation({ summary: 'Get all active live streams' })
   async getActive() {
     return this.streamService.getActiveStreams();
   }
 
   @Get('join/:room_name')
-  @ApiOperation({ summary: 'Join a stream as a guest (Public)' })
-  @ApiParam({
-    name: 'room_name',
-    type: 'string',
-    description: 'The unique name of the room to join',
-  })
-  @ApiResponse({ status: 200, description: 'Returns a guest access token.' })
+  @ApiOperation({ summary: 'Public endpoint for guests to join a live' })
+  @ApiParam({ name: 'room_name', type: 'string' })
   async join(@Param('room_name') room_name: string) {
-    // Logic for generating a unique guest ID
     const guestId = `guest_${Math.floor(Math.random() * 10000)}`;
+    return this.streamService.getPublicJoinToken(room_name, guestId);
+  }
 
-    const token = await this.streamService.getPublicJoinToken(
-      room_name,
-      guestId,
-    );
+  @Get('videos')
+  @ApiOperation({ summary: 'Get all recorded videos (Past streams)' })
+  async getVideos() {
+    return this.streamService.getAllRecordedVideos();
+  }
 
-    return { token, guestId }; // Returning guestId is helpful for frontend tracking
+  @Get('videos/:room_name')
+  @ApiOperation({ summary: 'Get details of a single recorded video' })
+  @ApiParam({ name: 'room_name', type: 'string' })
+  async getVideo(@Param('room_name') room_name: string) {
+    return this.streamService.getSingleRecordedVideo(room_name);
   }
 }

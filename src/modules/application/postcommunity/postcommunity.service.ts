@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { formatDistanceToNow } from 'date-fns';
 import { TajulStorage } from 'src/common/lib/Disk/TajulStorage';
+import { NotificationRepository } from 'src/common/repository/notification/notification.repository';
 import appConfig from 'src/config/app.config';
 import { PrismaService } from 'src/prisma/prisma.service';
 import {
@@ -15,7 +16,10 @@ import {
 
 @Injectable()
 export class PostCommunityService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notificationRepo: NotificationRepository,
+  ) {}
 
   async createPost(
     userId: string,
@@ -199,9 +203,18 @@ export class PostCommunityService {
   }
 
   // 3. Toggle Like Logic (Scalable way)
+  /**
+   * 1. Toggle Like Logic
+   * Scalable approach using composite unique key
+   */
   async toggleLike(userId: string, postId: string) {
     const existingLike = await this.prisma.postLike.findUnique({
-      where: { post_id_user_id: { post_id: postId, user_id: userId } },
+      where: {
+        post_id_user_id: {
+          post_id: postId,
+          user_id: userId,
+        },
+      },
     });
 
     if (existingLike) {
@@ -209,14 +222,42 @@ export class PostCommunityService {
       return { message: 'Unliked successfully', liked: false };
     }
 
+    // Like creation
     await this.prisma.postLike.create({
       data: { post_id: postId, user_id: userId },
     });
+
+    // Fetch post author for notification
+    const post = await this.prisma.postCommunity.findUnique({
+      where: { id: postId },
+      select: { author_id: true, title: true },
+    });
+
+    // Notify the post owner (if it's not the same person)
+    if (post && post.author_id !== userId) {
+      await this.notificationRepo.createNotification({
+        sender_id: userId,
+        receiver_id: post.author_id,
+        text: `liked your post: "${post.title.substring(0, 25)}..."`,
+        type: 'post_like',
+        entity_id: postId,
+      });
+    }
+
     return { message: 'Liked successfully', liked: true };
   }
 
   // 4. Create Comment/Reply
   async createComment(userId: string, postId: string, dto: CreateCommentDto) {
+    // 1. Fetch post using 'author_id' instead of 'user_id'
+    const post = await this.prisma.postCommunity.findUnique({
+      where: { id: postId },
+      select: { author_id: true, title: true }, // Changed user_id to author_id
+    });
+
+    if (!post) throw new NotFoundException('Post not found');
+
+    // 2. Comment Create logic (remains the same)
     const comment = await this.prisma.comment.create({
       data: {
         content: dto.content,
@@ -225,15 +266,57 @@ export class PostCommunityService {
         parent_id: dto.parent_id || null,
       },
       include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            avatar: true,
-          },
-        },
+        user: { select: { id: true, name: true, avatar: true } },
       },
     });
+
+    // --- Notification Logic ---
+
+    if (!dto.parent_id) {
+      // Logic for top-level comment
+      if (post.author_id !== userId) {
+        await this.notificationRepo.createNotification({
+          sender_id: userId,
+          receiver_id: post.author_id, // Fixed property name
+          text: `commented on your post: "${post.title.substring(0, 20)}..."`,
+          type: 'post_comment',
+          entity_id: postId,
+        });
+      }
+    } else {
+      // Logic for reply
+      const parentComment = await this.prisma.comment.findUnique({
+        where: { id: dto.parent_id },
+        select: { author_id: true },
+      });
+
+      if (parentComment) {
+        // Notify Post Author
+        if (post.author_id !== userId) {
+          await this.notificationRepo.createNotification({
+            sender_id: userId,
+            receiver_id: post.author_id, // Fixed property name
+            text: `replied to a comment on your post`,
+            type: 'post_comment_reply',
+            entity_id: postId,
+          });
+        }
+
+        // Notify Comment Author
+        if (
+          parentComment.author_id !== userId &&
+          parentComment.author_id !== post.author_id
+        ) {
+          await this.notificationRepo.createNotification({
+            sender_id: userId,
+            receiver_id: parentComment.author_id,
+            text: `replied to your comment`,
+            type: 'comment_reply',
+            entity_id: postId,
+          });
+        }
+      }
+    }
 
     const customizedAvatar = comment.user.avatar
       ? TajulStorage.url(
@@ -246,10 +329,7 @@ export class PostCommunityService {
       status: 200,
       data: {
         ...comment,
-        user: {
-          ...comment.user,
-          avatar: customizedAvatar, // Customized avatar path
-        },
+        user: { ...comment.user, avatar: customizedAvatar },
       },
     };
   }

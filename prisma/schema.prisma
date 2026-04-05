@@ -258,13 +258,17 @@ model video_calls {
 }
 
 model live_streams {
-  id         String   @id @default(uuid())
-  room_name  String   @unique
-  host_id    String
-  title      String?
-  is_active  Boolean  @default(true)
-  created_at DateTime @default(now())
-  host       User     @relation(fields: [host_id], references: [id])
+  id             String    @id @default(uuid())
+  room_name      String    @unique
+  host_id        String
+  title          String?
+  is_active      Boolean   @default(true)
+  recording_url  String?   // Auto-record houar por S3 link ekhane thakbe
+  status         String    @default("streaming") // streaming, completed, failed
+  created_at     DateTime  @default(now())
+  ended_at       DateTime?
+  
+  host           User      @relation(fields: [host_id], references: [id])
 }
 
 model Role {

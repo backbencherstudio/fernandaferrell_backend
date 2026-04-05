@@ -1,61 +1,71 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { LivekitService } from '../livekit/livekit.service';
 
 @Injectable()
 export class StreamService {
   constructor(
-    private livekitService: LivekitService,
+    private readonly livekitService: LivekitService,
     private readonly prisma: PrismaService,
   ) {}
 
-  async startStream(user_id: string, title: string) {
-    const room_name = `live_${user_id}_${Date.now()}`;
-    const token = await this.livekitService.generateStreamToken(
-      room_name,
-      user_id,
-      true,
-    );
+  async startStream(userId: string, title: string) {
+    const room_name = `live_${userId}_${Date.now()}`;
+    
+    // 1. Generate Token for Host
+    const token = await this.livekitService.generateStreamToken(room_name, userId, true);
 
-    // Prisma table e live record entry [cite: 2026-01-31]
+    // 2. Create Record in DB
     await this.prisma.live_streams.create({
       data: {
         room_name,
-        host_id: user_id,
+        host_id: userId,
         title,
         is_active: true,
       },
     });
 
+    // 3. Trigger Auto Recording (Background process)
+    // Local public folder-e save hobe
+    await this.livekitService.triggerAutoRecording(room_name);
+
     return { token, room_name };
   }
 
   async getActiveStreams() {
-    const streams = await this.prisma.live_streams.findMany({
-      where: {
-        is_active: true,
-      },
-      include: {
-        host: {
-          select: {
-            id: true,
-            name: true,
-          },
-        },
-      },
-      orderBy: {
-        created_at: 'desc',
-      },
+    return this.prisma.live_streams.findMany({
+      where: { is_active: true },
+      include: { host: { select: { id: true, name: true } } },
+      orderBy: { created_at: 'desc' },
     });
-
-    return streams.map((stream) => ({
-      ...stream,
-      host: stream.host,
-    }));
   }
 
-  async getPublicJoinToken(room_name: string, viewer_id: string = 'guest') {
-    // Viewer er jonno is_host = false
-    return this.livekitService.generateStreamToken(room_name, viewer_id, false);
+  async getPublicJoinToken(room_name: string, viewer_id: string) {
+    const stream = await this.prisma.live_streams.findUnique({
+      where: { room_name, is_active: true },
+    });
+
+    if (!stream) throw new NotFoundException('Live stream not found or inactive');
+
+    // Guest will have is_host = false
+    const token = await this.livekitService.generateStreamToken(room_name, viewer_id, false);
+    return { token };
+  }
+
+  async getAllRecordedVideos() {
+    return this.prisma.live_streams.findMany({
+      where: { is_active: false, NOT: { recording_url: null } },
+      include: { host: { select: { id: true, name: true } } },
+      orderBy: { created_at: 'desc' },
+    });
+  }
+
+  async getSingleRecordedVideo(room_name: string) {
+    const video = await this.prisma.live_streams.findUnique({
+      where: { room_name },
+      include: { host: { select: { id: true, name: true } } },
+    });
+    if (!video) throw new NotFoundException('Recorded video not found');
+    return video;
   }
 }

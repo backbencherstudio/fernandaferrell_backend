@@ -1,10 +1,31 @@
-import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import {
+  Injectable,
+  InternalServerErrorException,
+  OnModuleInit,
+} from '@nestjs/common';
 import * as admin from 'firebase-admin';
 import { PrismaService } from 'src/prisma/prisma.service';
 
 @Injectable()
-export class NotificationRepository {
+export class NotificationRepository implements OnModuleInit {
   constructor(private readonly prisma: PrismaService) {}
+
+  onModuleInit() {
+    if (!admin.apps.length) {
+      try {
+        admin.initializeApp({
+          credential: admin.credential.cert({
+            projectId: process.env.FIREBASE_PROJECT_ID,
+            clientEmail: process.env.FIREBASE_CLIENT_EMAIL,
+            privateKey: process.env.FIREBASE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+          }),
+        });
+        console.log('🚀 Firebase Admin Initialized Successfully');
+      } catch (error) {
+        console.error('❌ Firebase Initialization Error:', error.message);
+      }
+    }
+  }
 
   async createNotification(payload: {
     sender_id: string;
@@ -15,16 +36,23 @@ export class NotificationRepository {
   }) {
     const { sender_id, receiver_id, text, type, entity_id } = payload;
 
+    console.log('--- 🆕 New Notification Request ---');
+    console.log('Payload:', JSON.stringify(payload, null, 2));
+
     try {
+      // 1. Notification Event finding
       let notificationEvent = await this.prisma.notificationEvent.findFirst({
         where: { type, text },
       });
 
       if (!notificationEvent) {
+        console.log(`📝 Creating new NotificationEvent for type: ${type}`);
         notificationEvent = await this.prisma.notificationEvent.create({
           data: { type, text },
         });
       }
+
+      // 2. database save notification
       const notification = await this.prisma.notification.create({
         data: {
           sender_id,
@@ -40,13 +68,14 @@ export class NotificationRepository {
         },
       });
 
-      this.sendFCM(receiver_id, type, text, entity_id);
+      console.log('✅ Notification saved to DB:', notification.id);
 
-      console.log('Notification sent successfully', notification);
+      // ৩. FCM sending (Background process )
+      this.sendFCM(receiver_id, type, text, entity_id);
 
       return notification;
     } catch (error) {
-      console.error('❌ Notification Error:', error);
+      console.error('❌ Database/Logic Error:', error);
       throw new InternalServerErrorException('Failed to process notification');
     }
   }
@@ -57,16 +86,26 @@ export class NotificationRepository {
     text: string,
     entityId: string,
   ) {
-    if (!admin.apps.length) return;
+    console.log(`🔍 Attempting to send FCM to User: ${receiverId}`);
+
+    if (!admin.apps.length) {
+      console.error('⚠️ FCM skipped: Firebase Admin not initialized.');
+      return;
+    }
 
     try {
+      // user and token finding
       const user = await this.prisma.user.findUnique({
         where: { id: receiverId },
         select: { fcm_token: true },
       });
 
-      if (!user?.fcm_token) return;
+      if (!user?.fcm_token) {
+        console.warn(`⚠️ FCM skipped: No token found for user ${receiverId}`);
+        return;
+      }
 
+      // FCM message payload  making
       const message: admin.messaging.Message = {
         token: user.fcm_token,
         notification: {
@@ -87,16 +126,35 @@ export class NotificationRepository {
         },
         apns: {
           payload: {
-            aps: { sound: 'default', badge: 1 },
+            aps: { sound: 'default', badge: 1, contentAvailable: true },
           },
         },
       };
 
-      console.log('FCM Message:', message);
+      console.log('📡 Sending FCM Message Payload');
 
-      await admin.messaging().send(message);
-    } catch (fcmError) {
-      console.error('❌ FCM Send Error:', fcmError);
+      const response = await admin.messaging().send(message);
+      console.log('🎉 FCM Sent Successfully! MessageID:', response);
+    } catch (fcmError: any) {
+      console.error('❌ FCM Send Error:', fcmError.message);
+
+      //  token invalid then token remove from database
+      const errorCode = fcmError.code;
+      if (
+        errorCode === 'messaging/registration-token-not-registered' ||
+        errorCode === 'messaging/invalid-registration-token'
+      ) {
+        console.warn(`🗑️ Removing invalid FCM token for User: ${receiverId}`);
+        try {
+          await this.prisma.user.update({
+            where: { id: receiverId },
+            data: { fcm_token: null },
+          });
+          console.log('✅ Database cleaned: Invalid token removed.');
+        } catch (dbError) {
+          console.error('❌ Failed to remove invalid token from DB:', dbError);
+        }
+      }
     }
   }
 
