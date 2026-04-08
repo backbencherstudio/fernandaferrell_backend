@@ -8,6 +8,13 @@ export class InitiateCallDto {
   })
   @IsString()
   receiver_id: string;
+
+  @ApiProperty({
+    example: 'VIDEO',
+    description: 'Call type',
+  })
+  @IsString()
+  call_type: 'AUDIO' | 'VIDEO';
 }
 
 export class JoinCallDto {
@@ -26,4 +33,20 @@ export class StartStreamDto {
   })
   @IsString()
   title: string;
+}
+
+export class CallTerminateDto {
+  @ApiProperty({
+    example: 'call_jkhfuigwebger7g34_user_123',
+    description: 'Room name',
+  })
+  @IsString()
+  room_name: string;
+
+  @ApiProperty({
+    example: 'REJECTED',
+    description: 'Call status',
+  })
+  @IsString()
+  status: 'REJECTED' | 'ENDED' | 'MISSED';
 }

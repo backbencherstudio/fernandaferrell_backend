@@ -1,54 +1,66 @@
-import { Body, Controller, Post, Req, UseGuards } from '@nestjs/common';
 import {
-  ApiBearerAuth,
-  ApiBody,
-  ApiOperation,
-  ApiResponse,
-} from '@nestjs/swagger';
-import {
-  InitiateCallDto,
-  JoinCallDto,
-} from 'src/modules/application/live/dto/response-dto';
-import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
-import { LivekitService } from '../livekit/livekit.service';
+  Body,
+  Controller,
+  NotFoundException,
+  Patch,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
+import { ApiBearerAuth, ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { NotificationRepository } from 'src/common/repository/notification/notification.repository';
-
-@Controller('v1/video-calls')
+import { InitiateCallDto } from 'src/modules/application/live/dto/response-dto';
+import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
+import { PrismaService } from 'src/prisma/prisma.service';
+import { LivekitService } from '../livekit/livekit.service';
+@ApiTags('Calls')
+@Controller('v1/calls')
 export class CallController {
   constructor(
     private readonly livekitService: LivekitService,
     private readonly notificationRepo: NotificationRepository,
+    private readonly prisma: PrismaService,
   ) {}
 
-  /**
-   * 1. Caller initiates the call and notifies the receiver
-   */
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Initiate a call' })
-  @ApiBody({ type: InitiateCallDto })
-  @ApiResponse({ status: 200, description: 'Call initiated successfully' })
+  @ApiBody({
+    type: InitiateCallDto,
+  })
   @UseGuards(JwtAuthGuard)
   @Post('initiate')
-  async initiateCall(@Req() req: any, @Body() body: InitiateCallDto) {
+  async initiateCall(
+    @Req() req: any,
+    @Body() body: { receiver_id: string; call_type: 'AUDIO' | 'VIDEO' },
+  ) {
     const caller_id = req.user.userId;
-    const { receiver_id } = body;
+    const { receiver_id, call_type } = body;
 
-    // 1. Generate unique room name
-    const room_name = `call_${[caller_id, receiver_id].sort().join('_')}`;
+    const room_name = `call_${Date.now()}_${caller_id.slice(-4)}`;
+    const token = await this.livekitService.getCallToken(
+      room_name,
+      caller_id,
+      call_type,
+    );
 
-    // 2. Generate token for the Caller
-    const token = await this.livekitService.getCallToken(room_name, caller_id);
+    // Prisma DB create
+    await this.prisma.calls.create({
+      data: {
+        room_name,
+        caller_id,
+        receiver_id,
+        call_type: call_type as any,
+        status: 'PENDING',
+      },
+    });
 
-    
-
-    // 3. Create Notification for the Receiver
-    // This allows the receiver's UI to show the "Incoming Call" prompt
+    // Notify Receiver
     await this.notificationRepo.createNotification({
       sender_id: caller_id,
       receiver_id: receiver_id,
-      text: `Incoming call from ${req.user.name || 'User'}`,
-      type: 'incoming_call',
-      entity_id: room_name, // Pass the room_name so the receiver knows which room to join
+      text: `Incoming ${call_type.toLowerCase()} call`,
+      type: `incoming_${call_type.toLowerCase()}_call`,
+      entity_id: room_name,
     });
 
     return {
@@ -56,32 +68,74 @@ export class CallController {
       data: {
         room_name,
         token,
+        call_type,
         livekit_url: process.env.LIVEKIT_URL,
       },
     };
   }
 
-  /**
-   * 2. Receiver call accept korle ekhane join korbe
-   */
-
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Join a call' })
-  @ApiBody({ type: JoinCallDto })
-  @ApiResponse({ status: 200, description: 'Call joined successfully' })
   @UseGuards(JwtAuthGuard)
   @Post('join')
   async joinCall(@Req() req: any, @Body() body: { room_name: string }) {
     const user_id = req.user.userId;
 
+    const call = await this.prisma.calls.findUnique({
+      where: { room_name: body.room_name },
+    });
+
+    if (!call) throw new NotFoundException('Call not found');
+
     const token = await this.livekitService.getCallToken(
       body.room_name,
       user_id,
+      call.call_type as any,
     );
 
-    return {
-      status: 'success',
-      data: { token },
-    };
+    await this.prisma.calls.update({
+      where: { room_name: body.room_name },
+      data: { status: 'ACCEPTED', started_at: new Date() },
+    });
+
+    return { status: 'success', data: { token } };
+  }
+
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Terminate/Reject call' })
+  @UseGuards(JwtAuthGuard)
+  @Patch('terminate')
+  async terminateCall(
+    @Body()
+    body: {
+      room_name: string;
+      status: 'REJECTED' | 'ENDED' | 'MISSED';
+    },
+  ) {
+    const call = await this.prisma.calls.findUnique({
+      where: { room_name: body.room_name },
+    });
+
+    if (!call) throw new NotFoundException('Call not found');
+
+    let duration = 0;
+    if (body.status === 'ENDED' && call.started_at) {
+      duration = Math.floor(
+        (Date.now() - new Date(call.started_at).getTime()) / 1000,
+      );
+    }
+
+    await this.prisma.calls.update({
+      where: { room_name: body.room_name },
+      data: {
+        status: body.status as any,
+        ended_at: new Date(),
+        duration: duration > 0 ? duration : null,
+      },
+    });
+
+    await this.livekitService.deleteRoom(body.room_name);
+
+    return { status: 'success', message: `Call ${body.status.toLowerCase()}` };
   }
 }

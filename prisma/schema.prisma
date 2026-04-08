@@ -244,15 +244,30 @@ model Notification {
   sender                User?              @relation("notificationSender", fields: [sender_id], references: [id])
 }
 
-model video_calls {
-  id          String    @id @default(uuid())
-  room_name   String    @unique
-  caller_id   String
-  receiver_id String
-  status      String    @default("pending")
-  started_at  DateTime  @default(now())
-  ended_at    DateTime?
-  duration    Int?
+enum CallStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  MISSED
+  ENDED
+}
+
+enum CallType {
+  AUDIO
+  VIDEO
+}
+
+model calls {
+  id           String      @id @default(uuid())
+  room_name    String      @unique
+  caller_id    String
+  receiver_id  String
+  call_type    CallType    @default(VIDEO) // Add this field
+  status       CallStatus  @default(PENDING)
+  started_at   DateTime    @default(now())
+  ended_at     DateTime?
+  duration     Int?        // In seconds
+  updated_at   DateTime    @updatedAt
 
   @@index([caller_id, receiver_id])
 }
