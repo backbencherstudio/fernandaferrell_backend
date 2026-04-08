@@ -9,7 +9,11 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { NotificationRepository } from 'src/common/repository/notification/notification.repository';
-import { InitiateCallDto } from 'src/modules/application/live/dto/response-dto';
+import {
+  InitiateCallDto,
+  JoinCallDto,
+  TerminateCallDto,
+} from 'src/modules/application/live/dto/response-dto';
 import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { LivekitService } from '../livekit/livekit.service';
@@ -76,6 +80,9 @@ export class CallController {
 
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Join a call' })
+  @ApiBody({
+    type: JoinCallDto,
+  })
   @UseGuards(JwtAuthGuard)
   @Post('join')
   async joinCall(@Req() req: any, @Body() body: { room_name: string }) {
@@ -103,6 +110,9 @@ export class CallController {
 
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Terminate/Reject call' })
+  @ApiBody({
+    type: TerminateCallDto,
+  })
   @UseGuards(JwtAuthGuard)
   @Patch('terminate')
   async terminateCall(
