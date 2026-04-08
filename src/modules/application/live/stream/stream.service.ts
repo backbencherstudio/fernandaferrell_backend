@@ -15,12 +15,12 @@ export class StreamService {
 
 async startStream(userId: string, title: string) {
   // 1. Validate User Role (If not handled by Guard)
-  const user = await this.prisma.users.findUnique({
+  const user = await this.prisma.user.findUnique({
     where: { id: userId },
-    select: { role: true }
+    select: { type: true }
   });
 
-  if (user?.role !== 'SEEKER') {
+  if (user?.type !== 'SEEKER') {
     throw new ForbiddenException('Only seekers can start a live stream.');
   }
 
