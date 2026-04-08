@@ -26,7 +26,6 @@ export class StreamService {
     });
 
     // 3. Trigger Auto Recording (Background process)
-    // Local public folder-e save hobe
     await this.livekitService.triggerAutoRecording(room_name);
 
     return { token, room_name };
