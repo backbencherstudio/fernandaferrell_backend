@@ -15,7 +15,6 @@ export class StreamService {
     // 1. Generate Token for Host
     const token = await this.livekitService.generateStreamToken(room_name, userId, true);
 
-    // 2. Create Record in DB
     await this.prisma.live_streams.create({
       data: {
         room_name,
