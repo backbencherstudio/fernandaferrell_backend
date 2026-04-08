@@ -47,6 +47,17 @@ export class StreamController {
     return this.streamService.getPublicJoinToken(room_name, guestId);
   }
 
+
+    @ApiBearerAuth()
+  @UseGuards(JwtAuthGuard)
+  @Post('stop/:room_name')
+  @ApiOperation({ summary: 'Host stops the live stream and ends recording' })
+  @ApiParam({ name: 'room_name', type: 'string' })
+  async stop(@Req() req, @Param('room_name') room_name: string) {
+    // req.user.userId ensure korbe jate onno keu karor stream bondho na korte pare
+    return this.streamService.stopStream(req.user.userId, room_name);
+  }
+
   @Get('videos')
   @ApiOperation({ summary: 'Get all recorded videos (Past streams)' })
   async getVideos() {
