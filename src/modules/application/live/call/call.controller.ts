@@ -80,32 +80,48 @@ export class CallController {
 
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Join a call' })
-  @ApiBody({
-    type: JoinCallDto,
-  })
+  @ApiBody({ type: JoinCallDto })
   @UseGuards(JwtAuthGuard)
   @Post('join')
-  async joinCall(@Req() req: any, @Body() body: { room_name: string }) {
+  async joinCall(@Req() req: any, @Body() body: JoinCallDto) {
     const user_id = req.user.userId;
+    const { room_name } = body;
 
+    // 1. Call exist kore kina check kora
     const call = await this.prisma.calls.findUnique({
-      where: { room_name: body.room_name },
+      where: { room_name },
     });
 
-    if (!call) throw new NotFoundException('Call not found');
+    if (!call) {
+      throw new NotFoundException('Call not found');
+    }
 
+    // 2. LiveKit token generate kora
     const token = await this.livekitService.getCallToken(
-      body.room_name,
+      room_name,
       user_id,
       call.call_type as any,
     );
 
-    await this.prisma.calls.update({
-      where: { room_name: body.room_name },
-      data: { status: 'ACCEPTED', started_at: new Date() },
+    // 3. Call status update (Scalability-r jonno logic check kora valo jodi call agei start hoye thake)
+    const updatedCall = await this.prisma.calls.update({
+      where: { room_name },
+      data: {
+        status: 'ACCEPTED',
+        started_at: call.started_at || new Date(), // Jodi agei start hoy, tobe ager time rakha
+      },
     });
 
-    return { status: 'success', data: { token } };
+    // 4. Clean Response
+    return {
+      status: 'success',
+      data: {
+        room_name: updatedCall.room_name,
+        token: token,
+        call_type: updatedCall.call_type,
+        livekit_url: process.env.LIVEKIT_URL,
+      },
+    };
   }
 
   @ApiBearerAuth()
