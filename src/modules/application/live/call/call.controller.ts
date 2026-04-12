@@ -17,6 +17,7 @@ import {
 import { JwtAuthGuard } from 'src/modules/auth/guards/jwt-auth.guard';
 import { PrismaService } from 'src/prisma/prisma.service';
 import { LivekitService } from '../livekit/livekit.service';
+
 @ApiTags('Calls')
 @Controller('v1/calls')
 export class CallController {
@@ -28,9 +29,7 @@ export class CallController {
 
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Initiate a call' })
-  @ApiBody({
-    type: InitiateCallDto,
-  })
+  @ApiBody({ type: InitiateCallDto })
   @UseGuards(JwtAuthGuard)
   @Post('initiate')
   async initiateCall(
@@ -38,6 +37,8 @@ export class CallController {
     @Body() body: { receiver_id: string; call_type: 'AUDIO' | 'VIDEO' },
   ) {
     const caller_id = req.user.userId;
+    // টোকেন বা ডাটাবেস থেকে ইউজারের নাম পেলে ভালো, না পেলে ডিফল্ট স্ট্রিং
+    const caller_name = req.user.name || req.user.username || 'Unknown Caller';
     const { receiver_id, call_type } = body;
 
     const room_name = `call_${Date.now()}_${caller_id.slice(-4)}`;
@@ -47,7 +48,7 @@ export class CallController {
       call_type,
     );
 
-    // Prisma DB create
+    // 1. Create Call Record in DB
     await this.prisma.calls.create({
       data: {
         room_name,
@@ -58,15 +59,24 @@ export class CallController {
       },
     });
 
-    // Notify Receiver
+    // 2. Notify Receiver with Push Data Payload
     await this.notificationRepo.createNotification({
       sender_id: caller_id,
       receiver_id: receiver_id,
       text: `Incoming ${call_type.toLowerCase()} call`,
-      type: `incoming_${call_type.toLowerCase()}_call`,
+      type: `incoming_call`, // Type matched for frontend consistency
       entity_id: room_name,
+      payload: {
+        room_name: room_name,
+        livekit_url: process.env.LIVEKIT_URL,
+        call_type: call_type,
+        caller_id: caller_id,
+        caller_name: caller_name,
+        type: 'incoming_call', // Required for FCM Data message routing in Flutter
+      },
     });
 
+    // 3. Return Call Info to Caller
     return {
       status: 'success',
       data: {
@@ -87,7 +97,6 @@ export class CallController {
     const user_id = req.user.userId;
     const { room_name } = body;
 
-    // 1. Call exist kore kina check kora
     const call = await this.prisma.calls.findUnique({
       where: { room_name },
     });
@@ -96,23 +105,20 @@ export class CallController {
       throw new NotFoundException('Call not found');
     }
 
-    // 2. LiveKit token generate kora
     const token = await this.livekitService.getCallToken(
       room_name,
       user_id,
       call.call_type as any,
     );
 
-    // 3. Call status update (Scalability-r jonno logic check kora valo jodi call agei start hoye thake)
     const updatedCall = await this.prisma.calls.update({
       where: { room_name },
       data: {
         status: 'ACCEPTED',
-        started_at: call.started_at || new Date(), // Jodi agei start hoy, tobe ager time rakha
+        started_at: call.started_at || new Date(),
       },
     });
 
-    // 4. Clean Response
     return {
       status: 'success',
       data: {
@@ -126,9 +132,7 @@ export class CallController {
 
   @ApiBearerAuth()
   @ApiOperation({ summary: 'Terminate/Reject call' })
-  @ApiBody({
-    type: TerminateCallDto,
-  })
+  @ApiBody({ type: TerminateCallDto })
   @UseGuards(JwtAuthGuard)
   @Patch('terminate')
   async terminateCall(

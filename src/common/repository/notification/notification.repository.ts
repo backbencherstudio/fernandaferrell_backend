@@ -27,17 +27,18 @@ export class NotificationRepository implements OnModuleInit {
     }
   }
 
-  async createNotification(payload: {
+async createNotification(data: {
     sender_id: string;
     receiver_id: string;
     text: string;
     type: string;
     entity_id: string;
+    payload?: Record<string, any>;
   }) {
-    const { sender_id, receiver_id, text, type, entity_id } = payload;
+    const { sender_id, receiver_id, text, type, entity_id, payload } = data;
 
     console.log('--- 🆕 New Notification Request ---');
-    console.log('Payload:', JSON.stringify(payload, null, 2));
+    console.log('Payload:', JSON.stringify(data, null, 2));
 
     try {
       // 1. Notification Event finding
@@ -70,8 +71,9 @@ export class NotificationRepository implements OnModuleInit {
 
       console.log('✅ Notification saved to DB:', notification.id);
 
-      // ৩. FCM sending (Background process )
-      this.sendFCM(receiver_id, type, text, entity_id);
+      // ৩. FCM sending (Background process)
+      // 👇 এখানে payload-টি sendFCM এর ভেতরে পাঠিয়ে দিতে হবে
+      this.sendFCM(receiver_id, type, text, entity_id, payload);
 
       return notification;
     } catch (error) {
@@ -80,11 +82,12 @@ export class NotificationRepository implements OnModuleInit {
     }
   }
 
-  private async sendFCM(
+private async sendFCM(
     receiverId: string,
     type: string,
     text: string,
     entityId: string,
+    payload?: Record<string, any>, 
   ) {
     console.log(`🔍 Attempting to send FCM to User: ${receiverId}`);
 
@@ -94,7 +97,7 @@ export class NotificationRepository implements OnModuleInit {
     }
 
     try {
-      // user and token finding
+      // 1. User and token finding
       const user = await this.prisma.user.findUnique({
         where: { id: receiverId },
         select: { fcm_token: true },
@@ -105,7 +108,17 @@ export class NotificationRepository implements OnModuleInit {
         return;
       }
 
-      // FCM message payload  making
+      // 2. FCM Data Payload Making (Crucial Step)
+      const stringifiedPayload: Record<string, string> = {};
+      if (payload) {
+        for (const [key, value] of Object.entries(payload)) {
+          if (value !== undefined && value !== null) {
+            stringifiedPayload[key] = String(value);
+          }
+        }
+      }
+
+      // 3. Constructing FCM Message
       const message: admin.messaging.Message = {
         token: user.fcm_token,
         notification: {
@@ -116,6 +129,7 @@ export class NotificationRepository implements OnModuleInit {
           entity_id: String(entityId),
           type: String(type),
           click_action: 'FLUTTER_NOTIFICATION_CLICK',
+          ...stringifiedPayload, 
         },
         android: {
           priority: 'high',
@@ -132,13 +146,15 @@ export class NotificationRepository implements OnModuleInit {
       };
 
       console.log('📡 Sending FCM Message Payload');
+      // console.log('Data Payload:', message.data);
 
       const response = await admin.messaging().send(message);
       console.log('🎉 FCM Sent Successfully! MessageID:', response);
+      
     } catch (fcmError: any) {
       console.error('❌ FCM Send Error:', fcmError.message);
 
-      //  token invalid then token remove from database
+      // Token invalid then token remove from database
       const errorCode = fcmError.code;
       if (
         errorCode === 'messaging/registration-token-not-registered' ||
