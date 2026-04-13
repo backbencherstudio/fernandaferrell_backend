@@ -8,7 +8,9 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiBody, ApiOperation, ApiTags } from '@nestjs/swagger';
+import { TajulStorage } from 'src/common/lib/Disk/TajulStorage';
 import { NotificationRepository } from 'src/common/repository/notification/notification.repository';
+import appConfig from 'src/config/app.config';
 import {
   InitiateCallDto,
   JoinCallDto,
@@ -36,9 +38,21 @@ export class CallController {
     @Req() req: any,
     @Body() body: { receiver_id: string; call_type: 'AUDIO' | 'VIDEO' },
   ) {
-    const caller_id = req.user.userId;
-    // টোকেন বা ডাটাবেস থেকে ইউজারের নাম পেলে ভালো, না পেলে ডিফল্ট স্ট্রিং
-    const caller_name = req.user.name || req.user.username || 'Unknown Caller';
+    const caller_id = req.user?.userId;
+
+    //  Fetch from DB
+    const user = await this.prisma.user.findUnique({
+      where: { id: caller_id },
+      select: {
+        name: true,
+        username: true,
+        avatar: true,
+      },
+    });
+
+    const caller_name = user?.name || user?.username || 'Unknown Caller';
+    const caller_avatar = user?.avatar || null;
+
     const { receiver_id, call_type } = body;
 
     const room_name = `call_${Date.now()}_${caller_id.slice(-4)}`;
@@ -69,12 +83,20 @@ export class CallController {
       payload: {
         room_name: room_name,
         livekit_url: process.env.LIVEKIT_URL,
+        receiver_id: receiver_id,
         call_type: call_type,
         caller_id: caller_id,
         caller_name: caller_name,
-        type: 'incoming_call', // Required for FCM Data message routing in Flutter
+        caller_avatar: caller_avatar
+          ? TajulStorage.url(
+              appConfig().storageUrl.avatar + '/' + caller_avatar,
+            )
+          : null,
+        type: 'incoming_call',
       },
     });
+
+    console.log('Receiver ID:', receiver_id, caller_name, caller_avatar);
 
     // 3. Return Call Info to Caller
     return {
