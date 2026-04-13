@@ -152,24 +152,28 @@ export class CallController {
     };
   }
 
-  @ApiBearerAuth()
+@ApiBearerAuth()
   @ApiOperation({ summary: 'Terminate/Reject call' })
   @ApiBody({ type: TerminateCallDto })
   @UseGuards(JwtAuthGuard)
   @Patch('terminate')
   async terminateCall(
+    @Req() req: any,
     @Body()
     body: {
       room_name: string;
       status: 'REJECTED' | 'ENDED' | 'MISSED';
     },
   ) {
+    const current_user_id = req.user?.userId;
+
     const call = await this.prisma.calls.findUnique({
       where: { room_name: body.room_name },
     });
 
     if (!call) throw new NotFoundException('Call not found');
 
+    // 1. Calculate duration for 'ENDED' calls
     let duration = 0;
     if (body.status === 'ENDED' && call.started_at) {
       duration = Math.floor(
@@ -177,6 +181,7 @@ export class CallController {
       );
     }
 
+    // 2. Update Database Record
     await this.prisma.calls.update({
       where: { room_name: body.room_name },
       data: {
@@ -186,8 +191,40 @@ export class CallController {
       },
     });
 
-    await this.livekitService.deleteRoom(body.room_name);
+    // 3. Determine who to notify and why (for frontend UI auto-close)
+    const target_id = current_user_id === call.caller_id ? call.receiver_id : call.caller_id;
+    const reason = current_user_id === call.caller_id ? 'caller_cancelled' : 'receiver_rejected';
 
-    return { status: 'success', message: `Call ${body.status.toLowerCase()}` };
+    // 4. Send Immediate Event/FCM
+    // This allows the receiver's incoming screen to auto-close
+    await this.notificationRepo.createNotification({
+      sender_id: current_user_id,
+      receiver_id: target_id,
+      text: `Call ${body.status.toLowerCase()}`,
+      type: 'call_terminated',
+      entity_id: body.room_name,
+      payload: {
+        type: 'call_terminated',
+        room_name: body.room_name,
+        status: body.status,
+        reason: body.status === 'REJECTED' ? reason : 'call_ended',
+      },
+    });
+
+    // 5. Cleanup LiveKit
+    try {
+      await this.livekitService.deleteRoom(body.room_name);
+    } catch (error) {
+      // Avoid breaking the response if room was already cleaned up
+      console.error('LiveKit room deletion failed:', error.message);
+    }
+
+    // 6. Return extended response format
+    return { 
+      status: 'success', 
+      message: `Call ${body.status.toLowerCase()}`,
+      room_name: body.room_name,
+      call_status: body.status
+    };
   }
 }
