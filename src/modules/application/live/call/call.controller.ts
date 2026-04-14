@@ -180,6 +180,7 @@ export class CallController {
         (Date.now() - new Date(call.started_at).getTime()) / 1000,
       );
     }
+    //
 
     // 2. Update Database Record
     await this.prisma.calls.update({
